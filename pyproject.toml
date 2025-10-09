@@ -1,0 +1,24 @@
+[project]
+name = "my-first-python-app"
+version = "0.1.0"
+description = ""
+authors = [
+    {name = "Michael Scott",email = "michael.scott123@t-mobile.com"}
+]
+readme = "README.md"
+requires-python = ">=3.11,<4.0"
+dependencies = [
+    "psycopg[pool] (>=3.2.10,<4.0.0)",
+    "fastapi (>=0.118.2,<0.119.0)",
+    "uvicorn (>=0.37.0,<0.38.0)",
+    "asyncstdlib (>=3.13.1,<4.0.0)",
+    "flask (>=3.1.2,<4.0.0)"
+]
+
+[tool.poetry]
+package-mode = false
+
+
+[build-system]
+requires = ["poetry-core>=2.0.0,<3.0.0"]
+build-backend = "poetry.core.masonry.api"
