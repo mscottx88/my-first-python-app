@@ -8,10 +8,7 @@ import src.query_builder as qb
 
 
 def parse_column(
-    statement: sql.Composable,
-    values: list[Any],
-    /,
-    **kwargs: Any,
+    statement: sql.Composable, values: list[Any], /, **kwargs: Any
 ) -> tuple[sql.Composable, list[Any]]:
     """
     Parse a column reference.
@@ -21,9 +18,10 @@ def parse_column(
         raise ValueError("Column reference requires 'column' argument")
 
     if "correlation" in kwargs:
-        statement += sql.SQL(".").join(
-            [sql.Identifier(kwargs["correlation"]), sql.Identifier(kwargs["column"])]
-        )
+        statement += sql.Identifier(kwargs["correlation"]) + sql.SQL(".")
+
+    if kwargs["column"] == "*":
+        statement += sql.SQL("*")
     else:
         statement += sql.Identifier(kwargs["column"])
 
@@ -31,10 +29,7 @@ def parse_column(
 
 
 def parse_function(
-    statement: sql.Composable,
-    values: list[Any],
-    /,
-    **kwargs: Any,
+    statement: sql.Composable, values: list[Any], /, **kwargs: Any
 ) -> tuple[sql.Composable, list[Any]]:
     """
     Parse a function call.
@@ -44,7 +39,7 @@ def parse_function(
         raise ValueError("Function call requires 'function_name' argument")
 
     function_name = kwargs["function_name"].upper()
-    if function_name not in ("TRIM", "UPPER"):
+    if function_name not in ("MAX", "TRIM", "UPPER"):
         raise ValueError(f"Unsupported function: {function_name}")
 
     if "schema_name" in kwargs:
@@ -128,10 +123,7 @@ def parse_mixed_operator(
 
 
 def parse_operator_cast(
-    statement: sql.Composable,
-    values: list[Any],
-    /,
-    **kwargs: Any,
+    statement: sql.Composable, values: list[Any], /, **kwargs: Any
 ) -> tuple[sql.Composable, list[Any]]:
     """
     Parse a CAST operator.
@@ -366,7 +358,7 @@ def parse_expression(
         return parse_value(statement, values, **expression)
 
     if "sub_query" in expression:
-        sub_query, values = qb.build_query(expression["sub_query"], values)
+        sub_query, values = qb.build_statement(expression["sub_query"], values)
         statement += sql.SQL("(") + sub_query + sql.SQL(")")
         return statement, values
 

@@ -11,6 +11,7 @@ from psycopg.conninfo import make_conninfo
 from psycopg.rows import DictRow, dict_row
 from psycopg import AsyncConnection, sql
 from psycopg_pool import AsyncConnectionPool
+import src.query_builder as qb
 
 if sys.platform == "win32":
     asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
@@ -35,119 +36,6 @@ class PyPg:
                 user=self.db_user,
             ),
         )
-
-    def parse_expression(
-        self,
-        expression: Any,
-        /,
-        statement: sql.Composed | None = None,
-        values: list[Any] | None = None,
-    ) -> tuple[sql.Composed, list[Any]]:
-        """
-        Parses an expression into a SQL fragment.
-        A statement, if provided is appended to.
-        Values for placeholders are appended to the values list.
-        """
-
-        if statement is None:
-            statement = sql.SQL("").format()
-        assert statement is not None
-
-        if values is None:
-            values = []
-        assert values is not None
-
-        if isinstance(expression, str):
-            statement += sql.SQL(" ") + sql.Literal(expression)
-        elif isinstance(expression, list):
-            for item in cast(list[Any], expression):
-                statement, values = self.parse_expression(item, statement, values)
-        elif isinstance(expression, dict):
-            for key, value in cast(dict[str, Any], expression).items():
-                statement += sql.SQL(" ").join(
-                    [
-                        sql.Identifier(key),
-                        sql.SQL("="),
-                        sql.Placeholder(),
-                    ]
-                )
-                values.append(value)
-
-        return statement, values
-
-    def parse_criteria(
-        self,
-        /,
-        statement: sql.Composed | None = None,
-        values: list[Any] | None = None,
-        **criteria: Any,
-    ) -> tuple[sql.Composed, list[Any]]:
-        """
-        Parses criteria into a SQL WHERE clause.
-        A statement, if provided is appended to.
-        Values for placeholders are appended to the values list.
-        """
-
-        if statement is None:
-            statement = sql.SQL("").format()
-        assert statement is not None
-
-        if values is None:
-            values = []
-        assert values is not None
-
-        if "select" in criteria:
-            statement += sql.SQL(" SELECT ")
-            if criteria["select"] == "*" or criteria["select"] is None:
-                statement += sql.SQL("*")
-            elif isinstance(criteria["select"], list):
-                statement += sql.SQL(", ").join(
-                    map(sql.Identifier, cast(list[str], criteria["select"]))
-                )
-            elif isinstance(criteria["select"], dict):
-                statement += sql.SQL(", ").join(
-                    [
-                        sql.SQL(" ").join(
-                            [
-                                sql.Identifier(col),
-                                sql.SQL("AS"),
-                                sql.Identifier(alias),
-                            ]
-                        )
-                        for col, alias in cast(
-                            dict[str, str], criteria["select"]
-                        ).items()
-                    ]
-                )
-
-        if "from" in criteria:
-            statement += sql.SQL(" FROM ") + sql.Identifier(criteria["from"])
-
-        if "where" in criteria:
-            statement += sql.SQL(" WHERE ")
-            for index, [col, value] in enumerate(criteria["where"].items()):
-                values.append(value)
-                if index > 0:
-                    statement += sql.SQL(" AND ")
-                statement += sql.SQL(" ").join(
-                    [
-                        sql.Identifier(col),
-                        sql.SQL("="),
-                        sql.Placeholder(),
-                    ]
-                )
-
-        if "order_by" in criteria:
-            statement += sql.SQL(" ").join(
-                [sql.SQL(" ORDER BY "), sql.SQL(criteria["order_by"])]
-            )
-
-        if "limit" in criteria:
-            statement += sql.SQL(" ").join(
-                [sql.SQL(" LIMIT "), sql.Literal(criteria["limit"])]
-            )
-
-        return statement, values
 
     async def connect(self) -> AsyncContextManager[AsyncConnection]:
         """
@@ -305,15 +193,25 @@ class PyPg:
         Iterates over rows in a table from the PostgreSQL database.
         """
 
-        statement, values = self.parse_criteria(
-            **criteria | {"select": columns or "*", "from": table}
+        statement, values = qb.build_statement(
+            {
+                **criteria,
+                "select": list(
+                    map(
+                        lambda column: cast(dict[str, Any], {"column": column}),
+                        columns or ["*"],
+                    )
+                ),
+                "from": [{"table": table}],
+            }
         )
         try:
             count = 0
             if conn is None:
-                async with await self.connect() as conn, conn.cursor(
-                    row_factory=dict_row
-                ) as cur:
+                async with (
+                    await self.connect() as conn,
+                    conn.cursor(row_factory=dict_row) as cur,
+                ):
                     async for row in cur.stream(statement, values):
                         yield row
                         count += 1
@@ -347,18 +245,21 @@ class PyPg:
         Deletes rows based on specified conditions.
         """
 
-        values: list[Any] = []
-        statement: sql.Composed = sql.SQL("DELETE FROM {table}").format(
-            table=sql.Identifier(table)
+        statement, values = qb.build_statement(
+            {
+                **criteria,
+                "delete": True,
+                "from": [{"table": table}],
+                "returning": [{"column": "*"}],
+            }
         )
-        statement, values = self.parse_criteria(statement, values, **criteria)
-        statement += sql.SQL(" RETURNING *")
         try:
             count = 0
             if conn is None:
-                async with await self.connect() as conn, conn.cursor(
-                    row_factory=dict_row
-                ) as cur:
+                async with (
+                    await self.connect() as conn,
+                    conn.cursor(row_factory=dict_row) as cur,
+                ):
                     async for row in cur.stream(statement, values):
                         yield row
                         count += 1
@@ -394,11 +295,14 @@ class PyPg:
                 result = await cur.fetchone()
                 return result is not None
 
-        values: list[Any] = []
-        statement: sql.Composed = sql.SQL("SELECT 1 FROM {table}").format(
-            table=sql.Identifier(table)
+        statement, values = qb.build_statement(
+            {
+                **criteria,
+                "select": [{"value": 1}],
+                "from": [{"table": table}],
+                "limit": {"value": 1},
+            }
         )
-        statement, values = self.parse_criteria(statement, values, **criteria, limit=1)
         try:
             result: bool = False
             if conn is None:

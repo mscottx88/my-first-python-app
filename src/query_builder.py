@@ -86,6 +86,42 @@ def parse_with(
     return statement, values
 
 
+def parse_delete(
+    statement: sql.Composable, values: list[Any]
+) -> tuple[sql.Composable, list[Any]]:
+    """
+    Parse a DELETE statement.
+    """
+
+    return statement + sql.SQL(" DELETE "), values
+
+
+def parse_insert(
+    item: Any, statement: sql.Composable, values: list[Any]
+) -> tuple[sql.Composable, list[Any]]:
+    """
+    Parse an INSERT statement.
+    """
+
+    if "into" not in item:
+        raise ValueError("INSERT statement must have 'into' clause")
+
+    statement += sql.SQL(" INSERT INTO ") + sql.Identifier(item["into"])
+
+    if "alias" in item:
+        statement += sql.SQL(" AS ") + sql.Identifier(item["alias"])
+
+    if "columns" in item:
+        statement += sql.SQL(" (")
+        for index, column in enumerate(item["columns"]):
+            if index > 0:
+                statement += sql.SQL(", ")
+            statement += sql.Identifier(column)
+        statement += sql.SQL(")")
+
+    return statement, values
+
+
 def parse_select_item(
     item: Any, statement: sql.Composable, values: list[Any]
 ) -> tuple[sql.Composable, list[Any]]:
@@ -93,11 +129,7 @@ def parse_select_item(
     Parse a single SELECT item.
     """
 
-    if "column" in item and item["column"] == "*":
-        statement += sql.SQL("*")
-    else:
-        statement, values = ep.parse_expression(item, statement, values)
-
+    statement, values = ep.parse_expression(item, statement, values)
     if "alias" in item:
         statement += sql.SQL(" AS ") + sql.Identifier(item["alias"])
 
@@ -119,6 +151,23 @@ def parse_select(
     return statement, values
 
 
+def parse_values(
+    items: list[Any], statement: sql.Composable, values: list[Any]
+) -> tuple[sql.Composable, list[Any]]:
+    """
+    Parse a VALUES clause.
+    """
+
+    statement += sql.SQL(" VALUES ")
+    for index, item in enumerate(items):
+        if index > 0:
+            statement += sql.SQL(", ")
+        statement += sql.SQL("(")
+        statement, values = ep.parse_expression(item, statement, values)
+        statement += sql.SQL(")")
+    return statement, values
+
+
 def parse_from_item(
     item: Any, statement: sql.Composable, values: list[Any]
 ) -> tuple[sql.Composable, list[Any]]:
@@ -126,7 +175,7 @@ def parse_from_item(
     Parse a single FROM item.
     """
 
-    if "subquery" in item:
+    if "sub_query" in item:
         statement, values = ep.parse_expression(item, statement, values)
     elif "table" in item:
         statement += sql.Identifier(item["table"])
@@ -149,7 +198,14 @@ def parse_from(
     statement += sql.SQL(" FROM ")
     for index, item in enumerate(items):
         if index > 0:
-            statement += sql.SQL(" ")
+            if "type" not in item:
+                raise ValueError("JOIN items must have 'type'")
+
+            join_type = item["type"].upper()
+            if join_type not in ("INNER", "LEFT", "RIGHT", "FULL", "CROSS"):
+                raise ValueError(f"Invalid join type: {join_type}")
+
+            statement += sql.SQL(f" {join_type} JOIN ")
         statement, values = parse_from_item(item, statement, values)
     return statement, values
 
@@ -179,7 +235,7 @@ def parse_group_by(
     statement += sql.SQL(" GROUP BY ")
     for index, item in enumerate(items):
         if index > 0:
-            statement += sql.SQL(", ")
+            statement += sql.SQL(" AND ")
         statement, values = ep.parse_expression(item, statement, values)
     return statement, values
 
@@ -206,14 +262,12 @@ def parse_order_by_item(
     Parse a single ORDER BY item.
     """
 
-    if "expression" not in item:
-        raise ValueError("ORDER BY item must have an expression")
-
     direction = "ASC" if "direction" not in item else item["direction"].upper()
     if direction not in ("ASC", "DESC"):
         raise ValueError(f"Invalid ORDER BY direction: {direction}")
 
-    statement, values = ep.parse_expression(item["expression"], statement, values)
+    expression = {key: value for key, value in item.items() if key != "direction"}
+    statement, values = ep.parse_expression(expression, statement, values)
     statement += sql.SQL(f" {direction}")
     return statement, values
 
@@ -257,7 +311,22 @@ def parse_offset(
     return statement, values
 
 
-def build_query(
+def parse_returning(
+    items: list[Any], statement: sql.Composable, values: list[Any]
+) -> tuple[sql.Composable, list[Any]]:
+    """
+    Parse a RETURNING clause.
+    """
+
+    statement += sql.SQL(" RETURNING ")
+    for index, item in enumerate(items):
+        if index > 0:
+            statement += sql.SQL(", ")
+        statement, values = ep.parse_expression(item, statement, values)
+    return statement, values
+
+
+def build_statement(
     criteria: dict[str, Any], values: list[Any] | None = None
 ) -> tuple[sql.Composed, list[Any]]:
     """
@@ -274,8 +343,17 @@ def build_query(
     if "with" in criteria:
         statement, values = parse_with(criteria["with"], statement, values)
 
-    if "select" in criteria:
+    if "insert" in criteria:
+        statement, values = parse_insert(criteria["insert"], statement, values)
+    elif "update" in criteria:
+        raise NotImplementedError("UPDATE not implemented yet")
+    elif "delete" in criteria:
+        statement, values = parse_delete(statement, values)
+    elif "select" in criteria:
         statement, values = parse_select(criteria["select"], statement, values)
+
+    if "values" in criteria:
+        statement, values = parse_values(criteria["values"], statement, values)
 
     if "from" in criteria:
         statement, values = parse_from(criteria["from"], statement, values)
@@ -297,5 +375,8 @@ def build_query(
 
     if "offset" in criteria:
         statement, values = parse_offset(criteria["offset"], statement, values)
+
+    if "returning" in criteria:
+        statement, values = parse_returning(criteria["returning"], statement, values)
 
     return cast(sql.Composed, statement), values

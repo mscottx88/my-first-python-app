@@ -39,7 +39,7 @@ class TestQueryBuilder(unittest.TestCase):
                     {"name": "Test3"},
                 )
 
-                statement, values = qb.build_query(
+                statement, values = qb.build_statement(
                     {
                         "combine": [
                             {
@@ -63,7 +63,15 @@ class TestQueryBuilder(unittest.TestCase):
                                         }
                                     ],
                                     "select": [
-                                        {"column": "name"},
+                                        {
+                                            "function_name": "max",
+                                            "args": [
+                                                {
+                                                    "column": "name2",
+                                                    "correlation": "alias_example",
+                                                }
+                                            ],
+                                        },
                                         {
                                             "operator": "+",
                                             "left": {"value": 1},
@@ -133,7 +141,21 @@ class TestQueryBuilder(unittest.TestCase):
                                             "alias": "subquery_example",
                                         },
                                     ],
-                                    "from": [{"table": "cte_example"}],
+                                    "from": [
+                                        {"table": "cte_example"},
+                                        {
+                                            "sub_query": {
+                                                "select": [
+                                                    {
+                                                        "value": "Test10",
+                                                        "alias": "name2",
+                                                    }
+                                                ],
+                                            },
+                                            "alias": "alias_example",
+                                            "type": "CROSS",
+                                        },
+                                    ],
                                     "where": [
                                         {
                                             "left": {"column": "name"},
@@ -202,11 +224,11 @@ class TestQueryBuilder(unittest.TestCase):
                                     ],
                                     "order_by": [
                                         {
-                                            "expression": {"column": "name"},
+                                            "column": "name",
                                             "direction": "ASC",
                                         },
                                         {
-                                            "expression": {"column": "name"},
+                                            "column": "name",
                                             "direction": "DESC",
                                         },
                                     ],
@@ -236,6 +258,43 @@ class TestQueryBuilder(unittest.TestCase):
                         ],
                         "limit": {"value": 50},
                         "offset": {"value": 0},
+                    }
+                )
+
+                async with conn.cursor(row_factory=dict_row) as cur:
+                    print(f"\nStatement: {statement.as_string()}\n")
+                    print(f"Values: {values}\n")
+
+                    await cur.execute(statement, values)
+                    rows = await cur.fetchall()
+                    self.assertIsInstance(rows, list)
+                    for row in rows:
+                        print(f"Row: {row}")
+
+        asyncio.run(test())
+
+    def test_build_insert(self):
+        """
+        Test building a statement
+        """
+
+        async def test():
+            async with await self.pg.connect() as conn:
+                await self.pg.replace_table("test_table", conn, name="TEXT")
+
+                statement, values = qb.build_statement(
+                    {
+                        "insert": {
+                            "into": "test_table",
+                            "alias": "t",
+                            "columns": ["name"],
+                        },
+                        "values": [
+                            [{"value": "Test1"}],
+                            [{"value": "Test2"}],
+                            [{"value": "Test3"}],
+                        ],
+                        "returning": [{"column": "*"}],
                     }
                 )
 

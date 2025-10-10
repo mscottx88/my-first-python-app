@@ -29,9 +29,10 @@ class TestMyPg(unittest.TestCase):
         """
 
         async def test():
-            async with await self.pg.connect() as conn, conn.cursor(
-                row_factory=dict_row
-            ) as cur:
+            async with (
+                await self.pg.connect() as conn,
+                conn.cursor(row_factory=dict_row) as cur,
+            ):
                 await self.pg.replace_table("test_table", conn, name="TEXT")
                 await cur.execute("SELECT to_regclass('public.test_table')")
                 row = await cur.fetchone()
@@ -47,9 +48,10 @@ class TestMyPg(unittest.TestCase):
         """
 
         async def test():
-            async with await self.pg.connect() as conn, conn.cursor(
-                row_factory=dict_row
-            ) as cur:
+            async with (
+                await self.pg.connect() as conn,
+                conn.cursor(row_factory=dict_row) as cur,
+            ):
                 await self.pg.replace_table("test_table", conn, name="TEXT")
                 await self.pg.drop_table("test_table", conn)
                 await cur.execute("SELECT to_regclass('public.test_table')")
@@ -89,7 +91,7 @@ class TestMyPg(unittest.TestCase):
                     {"name": "Test3"},
                 )
                 async for i, row in a.enumerate(
-                    self.pg.get_rows("test_table", conn, order_by="name")
+                    self.pg.get_rows("test_table", conn, order_by=[{"column": "name"}])
                 ):
                     self.assertEqual(row["name"], f"Test{i+1}")
 
@@ -111,7 +113,15 @@ class TestMyPg(unittest.TestCase):
                     {"name": "Test3"},
                 )
                 async for row in self.pg.delete_rows(
-                    "test_table", conn, where={"name": "Test2"}
+                    "test_table",
+                    conn,
+                    where=[
+                        {
+                            "left": {"column": "name"},
+                            "operator": "=",
+                            "right": {"value": "Test2"},
+                        }
+                    ],
                 ):
                     self.assertEqual(row["name"], "Test2")
                 rows = await self.pg.list_get_rows("test_table", conn)
