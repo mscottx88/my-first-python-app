@@ -155,6 +155,24 @@ def parse_mixed_operator(
     )
 
 
+def parse_operator_and(
+    statement: sql.Composable, values: list[Any], /, **kwargs: Any
+) -> tuple[sql.Composable, list[Any]]:
+    """
+    Parse an AND operator.
+    """
+
+    if "expressions" not in kwargs:
+        raise ValueError("AND operator requires 'expressions' argument")
+
+    statement += sql.SQL("(")
+    statement, values = parse_expression_list(
+        kwargs["expressions"], statement, values, sql.SQL(" AND ")
+    )
+    statement += sql.SQL(")")
+    return statement, values
+
+
 def parse_operator_cast(
     statement: sql.Composable, values: list[Any], /, **kwargs: Any
 ) -> tuple[sql.Composable, list[Any]]:
@@ -265,6 +283,24 @@ def parse_operator_in(
     return statement + sql.SQL(")"), values
 
 
+def parse_operator_or(
+    statement: sql.Composable, values: list[Any], /, **kwargs: Any
+) -> tuple[sql.Composable, list[Any]]:
+    """
+    Parse an OR operator.
+    """
+
+    if "expressions" not in kwargs:
+        raise ValueError("AND operator requires 'expressions' argument")
+
+    statement += sql.SQL("(")
+    statement, values = parse_expression_list(
+        kwargs["expressions"], statement, values, sql.SQL(" OR ")
+    )
+    statement += sql.SQL(")")
+    return statement, values
+
+
 def parse_operator_trim(
     statement: sql.Composable, values: list[Any], /, **kwargs: Any
 ) -> tuple[sql.Composable, list[Any]]:
@@ -312,10 +348,14 @@ def parse_operator(
             return parse_mixed_operator(
                 sql.SQL(f" {operator} "), statement, values, **kwargs
             )
+        case "AND":
+            return parse_operator_and(statement, values, **kwargs)
         case "CAST":
             return parse_operator_cast(statement, values, **kwargs)
         case "IN":
             return parse_operator_in(statement, values, **kwargs)
+        case "OR":
+            return parse_operator_or(statement, values, **kwargs)
         case "TRIM":
             return parse_operator_trim(statement, values, **kwargs)
         case _:

@@ -218,7 +218,14 @@ def parse_from(
                 raise ValueError(f"Invalid join type: {join_type}")
 
             statement += sql.SQL(f" {join_type} JOIN ")
+
         statement, values = parse_from_item(item, statement, values)
+
+        if "on" in item:
+            statement += sql.SQL(" ON ")
+            statement, values = ep.parse_expression_list(
+                item["on"], statement, values, sql.SQL(" AND ")
+            )
     return statement, values
 
 

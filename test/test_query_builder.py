@@ -153,7 +153,8 @@ class TestQueryBuilder(unittest.TestCase):
                                                 ],
                                             },
                                             "alias": "alias_example",
-                                            "type": "CROSS",
+                                            "type": "INNER",
+                                            "on": [{"value": True}],
                                         },
                                     ],
                                     "where": [
@@ -168,19 +169,39 @@ class TestQueryBuilder(unittest.TestCase):
                                             "right": {"value": "foo"},
                                         },
                                         {
-                                            "left": {"column": "name"},
-                                            "operator": "!=",
-                                            "right": {"value": "foo"},
-                                        },
-                                        {
-                                            "left": {"column": "name"},
-                                            "operator": ">",
-                                            "right": {"value": "a"},
-                                        },
-                                        {
-                                            "left": {"column": "name"},
-                                            "operator": ">=",
-                                            "right": {"value": "Test"},
+                                            "operator": "OR",
+                                            "expressions": [
+                                                {
+                                                    "operator": "AND",
+                                                    "expressions": [
+                                                        {
+                                                            "left": {"column": "name"},
+                                                            "operator": "=",
+                                                            "right": {"value": "foo"},
+                                                        },
+                                                        {
+                                                            "left": {"column": "name"},
+                                                            "operator": "<>",
+                                                            "right": {"value": "bar"},
+                                                        },
+                                                    ],
+                                                },
+                                                {
+                                                    "left": {"column": "name"},
+                                                    "operator": "!=",
+                                                    "right": {"value": "foo"},
+                                                },
+                                                {
+                                                    "left": {"column": "name"},
+                                                    "operator": ">",
+                                                    "right": {"value": "a"},
+                                                },
+                                                {
+                                                    "left": {"column": "name"},
+                                                    "operator": ">=",
+                                                    "right": {"value": "Test"},
+                                                },
+                                            ],
                                         },
                                         {
                                             "left": {"column": "name"},
