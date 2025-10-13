@@ -309,3 +309,52 @@ class TestQueryBuilder(unittest.TestCase):
                         print(f"Row: {row}")
 
         asyncio.run(test())
+
+    def test_build_update(self):
+        """
+        Test building an update statement
+        """
+
+        async def test():
+            async with await self.pg.connect() as conn:
+                await self.pg.replace_table("test_table", conn, name="TEXT", age="INT")
+                await self.pg.list_add_rows(
+                    "test_table",
+                    conn,
+                    {"name": "Test1", "age": 10},
+                    {"name": "Test2", "age": 20},
+                    {"name": "Test3", "age": 30},
+                )
+
+                statement, values = qb.build_statement(
+                    {
+                        "update": {
+                            "table": "test_table",
+                            "alias": "t",
+                            "set": {
+                                "name": {"value": "UpdatedName"},
+                                "age": {"default": True},
+                            },
+                        },
+                        "where": [
+                            {
+                                "left": {"column": "name"},
+                                "operator": "=",
+                                "right": {"value": "Test2"},
+                            }
+                        ],
+                        "returning": [{"column": "*"}],
+                    }
+                )
+
+                async with conn.cursor(row_factory=dict_row) as cur:
+                    print(f"\nStatement: {statement.as_string()}\n")
+                    print(f"Values: {values}\n")
+
+                    await cur.execute(statement, values)
+                    rows = await cur.fetchall()
+                    self.assertIsInstance(rows, list)
+                    for row in rows:
+                        print(f"Row: {row}")
+
+        asyncio.run(test())

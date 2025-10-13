@@ -357,6 +357,9 @@ def parse_expression(
     if "value" in expression:
         return parse_value(statement, values, **expression)
 
+    if "default" in expression and expression["default"]:
+        return statement + sql.SQL("DEFAULT"), values
+
     if "sub_query" in expression:
         sub_query, values = qb.build_statement(expression["sub_query"], values)
         statement += sql.SQL("(") + sub_query + sql.SQL(")")

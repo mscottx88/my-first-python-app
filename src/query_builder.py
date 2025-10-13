@@ -151,6 +151,34 @@ def parse_select(
     return statement, values
 
 
+def parse_update(
+    item: Any, statement: sql.Composable, values: list[Any]
+) -> tuple[sql.Composable, list[Any]]:
+    """
+    Parse an UPDATE statement.
+    """
+
+    if "table" not in item:
+        raise ValueError("UPDATE statement must have 'table' clause")
+
+    statement += sql.SQL(" UPDATE ") + sql.Identifier(item["table"])
+
+    if "alias" in item:
+        statement += sql.SQL(" AS ") + sql.Identifier(item["alias"])
+
+    if "set" not in item or not isinstance(item["set"], dict):
+        raise ValueError("UPDATE statement must have 'set' clause as a dictionary")
+
+    statement += sql.SQL(" SET ")
+    for index, (column, value) in enumerate(item["set"].items()):
+        if index > 0:
+            statement += sql.SQL(", ")
+        statement += sql.Identifier(column) + sql.SQL(" = ")
+        statement, values = ep.parse_expression(value, statement, values)
+
+    return statement, values
+
+
 def parse_values(
     items: list[Any], statement: sql.Composable, values: list[Any]
 ) -> tuple[sql.Composable, list[Any]]:
@@ -346,7 +374,7 @@ def build_statement(
     if "insert" in criteria:
         statement, values = parse_insert(criteria["insert"], statement, values)
     elif "update" in criteria:
-        raise NotImplementedError("UPDATE not implemented yet")
+        statement, values = parse_update(criteria["update"], statement, values)
     elif "delete" in criteria:
         statement, values = parse_delete(statement, values)
     elif "select" in criteria:
