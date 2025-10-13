@@ -53,12 +53,7 @@ def parse_with_item(
     statement += sql.Identifier(item["name"])
 
     if "columns" in item:
-        statement += sql.SQL(" (")
-        for index, column in enumerate(item["columns"]):
-            if index > 0:
-                statement += sql.SQL(", ")
-            statement += sql.Identifier(column)
-        statement += sql.SQL(")")
+        statement, values = ep.parse_column_list(item["columns"], statement, values)
 
     statement += sql.SQL(" AS")
 
@@ -68,6 +63,7 @@ def parse_with_item(
         else:
             statement += sql.SQL(" NOT MATERIALIZED")
 
+    statement += sql.SQL(" ")
     return ep.parse_expression(item, statement, values)
 
 
@@ -79,11 +75,7 @@ def parse_with(
     """
 
     statement += sql.SQL(" WITH ")
-    for index, item in enumerate(items):
-        if index > 0:
-            statement += sql.SQL(", ")
-        statement, values = parse_with_item(item, statement, values)
-    return statement, values
+    return ep.parse_expression_list(items, statement, values, parser=parse_with_item)
 
 
 def parse_delete(
@@ -103,21 +95,16 @@ def parse_insert(
     Parse an INSERT statement.
     """
 
-    if "into" not in item:
-        raise ValueError("INSERT statement must have 'into' clause")
+    if "table" not in item:
+        raise ValueError("INSERT statement must have 'table'")
 
-    statement += sql.SQL(" INSERT INTO ") + sql.Identifier(item["into"])
+    statement += sql.SQL(" INSERT INTO ") + sql.Identifier(item["table"])
 
     if "alias" in item:
         statement += sql.SQL(" AS ") + sql.Identifier(item["alias"])
 
     if "columns" in item:
-        statement += sql.SQL(" (")
-        for index, column in enumerate(item["columns"]):
-            if index > 0:
-                statement += sql.SQL(", ")
-            statement += sql.Identifier(column)
-        statement += sql.SQL(")")
+        statement, values = ep.parse_column_list(item["columns"], statement, values)
 
     return statement, values
 
@@ -130,6 +117,7 @@ def parse_select_item(
     """
 
     statement, values = ep.parse_expression(item, statement, values)
+
     if "alias" in item:
         statement += sql.SQL(" AS ") + sql.Identifier(item["alias"])
 
@@ -144,11 +132,7 @@ def parse_select(
     """
 
     statement += sql.SQL(" SELECT ")
-    for index, item in enumerate(items):
-        if index > 0:
-            statement += sql.SQL(", ")
-        statement, values = parse_select_item(item, statement, values)
-    return statement, values
+    return ep.parse_expression_list(items, statement, values, parser=parse_select_item)
 
 
 def parse_update(
@@ -159,7 +143,7 @@ def parse_update(
     """
 
     if "table" not in item:
-        raise ValueError("UPDATE statement must have 'table' clause")
+        raise ValueError("UPDATE statement must have 'table'")
 
     statement += sql.SQL(" UPDATE ") + sql.Identifier(item["table"])
 
@@ -246,11 +230,7 @@ def parse_where(
     """
 
     statement += sql.SQL(" WHERE ")
-    for index, item in enumerate(items):
-        if index > 0:
-            statement += sql.SQL(" AND ")
-        statement, values = ep.parse_expression(item, statement, values)
-    return statement, values
+    return ep.parse_expression_list(items, statement, values, joiner=sql.SQL(" AND "))
 
 
 def parse_group_by(
@@ -261,11 +241,7 @@ def parse_group_by(
     """
 
     statement += sql.SQL(" GROUP BY ")
-    for index, item in enumerate(items):
-        if index > 0:
-            statement += sql.SQL(" AND ")
-        statement, values = ep.parse_expression(item, statement, values)
-    return statement, values
+    return ep.parse_expression_list(items, statement, values, joiner=sql.SQL(" AND "))
 
 
 def parse_having(
@@ -276,11 +252,7 @@ def parse_having(
     """
 
     statement += sql.SQL(" HAVING ")
-    for index, item in enumerate(items):
-        if index > 0:
-            statement += sql.SQL(" AND ")
-        statement, values = ep.parse_expression(item, statement, values)
-    return statement, values
+    return ep.parse_expression_list(items, statement, values, joiner=sql.SQL(" AND "))
 
 
 def parse_order_by_item(
@@ -296,8 +268,7 @@ def parse_order_by_item(
 
     expression = {key: value for key, value in item.items() if key != "direction"}
     statement, values = ep.parse_expression(expression, statement, values)
-    statement += sql.SQL(f" {direction}")
-    return statement, values
+    return statement + sql.SQL(f" {direction}"), values
 
 
 def parse_order_by(
@@ -308,11 +279,9 @@ def parse_order_by(
     """
 
     statement += sql.SQL(" ORDER BY ")
-    for index, item in enumerate(items):
-        if index > 0:
-            statement += sql.SQL(", ")
-        statement, values = parse_order_by_item(item, statement, values)
-    return statement, values
+    return ep.parse_expression_list(
+        items, statement, values, parser=parse_order_by_item
+    )
 
 
 def parse_limit(
@@ -323,8 +292,7 @@ def parse_limit(
     """
 
     statement += sql.SQL(" LIMIT ")
-    statement, values = ep.parse_expression(item, statement, values)
-    return statement, values
+    return ep.parse_expression(item, statement, values)
 
 
 def parse_offset(
@@ -335,8 +303,7 @@ def parse_offset(
     """
 
     statement += sql.SQL(" OFFSET ")
-    statement, values = ep.parse_expression(item, statement, values)
-    return statement, values
+    return ep.parse_expression(item, statement, values)
 
 
 def parse_returning(
@@ -347,11 +314,7 @@ def parse_returning(
     """
 
     statement += sql.SQL(" RETURNING ")
-    for index, item in enumerate(items):
-        if index > 0:
-            statement += sql.SQL(", ")
-        statement, values = ep.parse_expression(item, statement, values)
-    return statement, values
+    return ep.parse_expression_list(items, statement, values)
 
 
 def build_statement(
@@ -371,14 +334,14 @@ def build_statement(
     if "with" in criteria:
         statement, values = parse_with(criteria["with"], statement, values)
 
-    if "insert" in criteria:
-        statement, values = parse_insert(criteria["insert"], statement, values)
-    elif "update" in criteria:
-        statement, values = parse_update(criteria["update"], statement, values)
-    elif "delete" in criteria:
+    if "delete" in criteria:
         statement, values = parse_delete(statement, values)
+    elif "insert" in criteria:
+        statement, values = parse_insert(criteria["insert"], statement, values)
     elif "select" in criteria:
         statement, values = parse_select(criteria["select"], statement, values)
+    elif "update" in criteria:
+        statement, values = parse_update(criteria["update"], statement, values)
 
     if "values" in criteria:
         statement, values = parse_values(criteria["values"], statement, values)

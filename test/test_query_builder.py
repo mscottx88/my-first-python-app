@@ -285,7 +285,7 @@ class TestQueryBuilder(unittest.TestCase):
                 statement, values = qb.build_statement(
                     {
                         "insert": {
-                            "into": "test_table",
+                            "table": "test_table",
                             "alias": "t",
                             "columns": ["name"],
                         },

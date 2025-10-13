@@ -2,9 +2,51 @@
 Expression parser for SQL statements.
 """
 
-from typing import LiteralString, cast, Any
+from typing import Callable, LiteralString, cast, Any
 from psycopg import sql
 import src.query_builder as qb
+
+
+def parse_expression_list(
+    expressions: list[Any],
+    statement: sql.Composable,
+    values: list[Any],
+    /,
+    joiner: sql.Composable | None = None,
+    parser: (
+        Callable[[Any, sql.Composable, list[Any]], tuple[sql.Composable, list[Any]]]
+        | None
+    ) = None,
+) -> tuple[sql.Composable, list[Any]]:
+    """
+    Parse a list of expressions.
+    """
+
+    for index, expression in enumerate(expressions):
+        if index > 0:
+            statement += joiner if joiner else sql.SQL(", ")
+        statement, values = (
+            parser(expression, statement, values)
+            if parser
+            else parse_expression(expression, statement, values)
+        )
+    return statement, values
+
+
+def parse_column_list(
+    columns: list[str], statement: sql.Composable, values: list[Any]
+) -> tuple[sql.Composable, list[Any]]:
+    """
+    Parse a list of column references.
+    """
+
+    statement += sql.SQL(" (")
+    for index, column in enumerate(columns):
+        if index > 0:
+            statement += sql.SQL(", ")
+        statement += sql.Identifier(column)
+    statement += sql.SQL(")")
+    return statement, values
 
 
 def parse_column(
@@ -43,19 +85,12 @@ def parse_function(
         raise ValueError(f"Unsupported function: {function_name}")
 
     if "schema_name" in kwargs:
-        statement += sql.SQL(".").join(
-            [sql.Identifier(kwargs["schema_name"]), sql.SQL(function_name)]
-        )
-    else:
-        statement += sql.SQL(function_name)
+        statement += sql.SQL(".") + sql.Identifier(kwargs["schema_name"])
+    statement += sql.SQL(function_name)
 
     statement += sql.SQL("(")
-    for index, arg in enumerate(kwargs.get("args", [])):
-        if index > 0:
-            statement += sql.SQL(", ")
-        statement, values = parse_expression(arg, statement, values)
-    statement += sql.SQL(")")
-    return statement, values
+    statement, values = parse_expression_list(kwargs.get("args", []), statement, values)
+    return statement + sql.SQL(")"), values
 
 
 def parse_infix_operator(
@@ -74,8 +109,7 @@ def parse_infix_operator(
 
     statement, values = parse_expression(kwargs["left"], statement, values)
     statement += operator
-    statement, values = parse_expression(kwargs["right"], statement, values)
-    return statement, values
+    return parse_expression(kwargs["right"], statement, values)
 
 
 def parse_prefix_operator(
@@ -93,8 +127,7 @@ def parse_prefix_operator(
         raise ValueError(f"Operator '{operator}' requires 'operand' argument")
 
     statement += operator
-    statement, values = parse_expression(kwargs["operand"], statement, values)
-    return statement, values
+    return parse_expression(kwargs["operand"], statement, values)
 
 
 def parse_mixed_operator(
@@ -208,8 +241,7 @@ def parse_operator_cast(
     if "with_time_zone" in kwargs and kwargs["with_time_zone"]:
         statement += sql.SQL(" WITH TIME ZONE")
 
-    statement += sql.SQL(")")
-    return statement, values
+    return statement + sql.SQL(")"), values
 
 
 def parse_operator_in(
@@ -227,13 +259,10 @@ def parse_operator_in(
 
     statement, values = parse_expression(kwargs["left"], statement, values)
     statement += sql.SQL(" IN (")
-
-    for index, item in enumerate(cast(list[Any], kwargs["right"])):
-        if index > 0:
-            statement += sql.SQL(", ")
-        statement, values = parse_expression(item, statement, values)
-    statement += sql.SQL(")")
-    return statement, values
+    statement, values = parse_expression_list(
+        cast(list[Any], kwargs["right"]), statement, values
+    )
+    return statement + sql.SQL(")"), values
 
 
 def parse_operator_trim(
@@ -260,8 +289,7 @@ def parse_operator_trim(
 
     statement += sql.SQL("FROM ")
     statement, values = parse_expression(kwargs["expression"], statement, values)
-    statement += sql.SQL(")")
-    return statement, values
+    return statement + sql.SQL(")"), values
 
 
 def parse_operator(
@@ -339,11 +367,7 @@ def parse_expression(
     """
 
     if isinstance(expression, list):
-        for index, expr in enumerate(expression):
-            if index > 0:
-                statement += sql.SQL(", ")
-            statement, values = parse_expression(expr, statement, values)
-        return statement, values
+        return parse_expression_list(expression, statement, values)
 
     if "column" in expression:
         return parse_column(statement, values, **expression)
