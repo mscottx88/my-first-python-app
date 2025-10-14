@@ -89,7 +89,7 @@ def parse_function(
     statement += sql.SQL(function_name)
 
     statement += sql.SQL("(")
-    statement, values = parse_expression_list(kwargs.get("args", []), statement, values)
+    statement, values = parse_expression(kwargs.get("args", []), statement, values)
     return statement + sql.SQL(")"), values
 
 
@@ -166,7 +166,7 @@ def parse_operator_and(
         raise ValueError("AND operator requires 'expressions' argument")
 
     statement += sql.SQL("(")
-    statement, values = parse_expression_list(
+    statement, values = parse_expression(
         kwargs["expressions"], statement, values, sql.SQL(" AND ")
     )
     statement += sql.SQL(")")
@@ -277,7 +277,7 @@ def parse_operator_in(
 
     statement, values = parse_expression(kwargs["left"], statement, values)
     statement += sql.SQL(" IN (")
-    statement, values = parse_expression_list(
+    statement, values = parse_expression(
         cast(list[Any], kwargs["right"]), statement, values
     )
     return statement + sql.SQL(")"), values
@@ -294,7 +294,7 @@ def parse_operator_or(
         raise ValueError("AND operator requires 'expressions' argument")
 
     statement += sql.SQL("(")
-    statement, values = parse_expression_list(
+    statement, values = parse_expression(
         kwargs["expressions"], statement, values, sql.SQL(" OR ")
     )
     statement += sql.SQL(")")
@@ -401,13 +401,19 @@ def parse_expression(
     expression: list[dict[str, Any]] | dict[str, Any],
     statement: sql.Composable,
     values: list[Any],
+    /,
+    joiner: sql.Composable | None = None,
+    parser: (
+        Callable[[Any, sql.Composable, list[Any]], tuple[sql.Composable, list[Any]]]
+        | None
+    ) = None,
 ) -> tuple[sql.Composable, list[Any]]:
     """
     Parse a single expression.
     """
 
     if isinstance(expression, list):
-        return parse_expression_list(expression, statement, values)
+        return parse_expression_list(expression, statement, values, joiner, parser)
 
     if "column" in expression:
         return parse_column(statement, values, **expression)

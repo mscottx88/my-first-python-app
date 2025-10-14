@@ -75,7 +75,7 @@ def parse_with(
     """
 
     statement += sql.SQL(" WITH ")
-    return ep.parse_expression_list(items, statement, values, parser=parse_with_item)
+    return ep.parse_expression(items, statement, values, parser=parse_with_item)
 
 
 def parse_delete(
@@ -132,7 +132,7 @@ def parse_select(
     """
 
     statement += sql.SQL(" SELECT ")
-    return ep.parse_expression_list(items, statement, values, parser=parse_select_item)
+    return ep.parse_expression(items, statement, values, parser=parse_select_item)
 
 
 def parse_update(
@@ -181,11 +181,28 @@ def parse_values(
 
 
 def parse_from_item(
-    item: Any, statement: sql.Composable, values: list[Any]
+    item: Any, statement: sql.Composable, values: list[Any], index: int
 ) -> tuple[sql.Composable, list[Any]]:
     """
     Parse a single FROM item.
     """
+
+    if index == 0:
+        if "type" in item or "on" in item:
+            raise ValueError("First FROM item cannot have 'type' or 'on'")
+    else:
+        if "type" not in item:
+            raise ValueError("JOIN items must have 'type'")
+
+        join_type = item["type"].upper()
+        if join_type not in ("INNER", "LEFT", "RIGHT", "FULL", "CROSS"):
+            raise ValueError(f"Invalid join type: {join_type}")
+        if join_type in ("INNER", "LEFT", "RIGHT", "FULL") and "on" not in item:
+            raise ValueError(f"{join_type} JOIN must have 'on' clause")
+        if join_type == "CROSS" and "on" in item:
+            raise ValueError("CROSS JOIN cannot have 'on' clause")
+
+        statement += sql.SQL(f" {join_type} JOIN ")
 
     if "sub_query" in item:
         statement, values = ep.parse_expression(item, statement, values)
@@ -196,6 +213,12 @@ def parse_from_item(
 
     if "alias" in item:
         statement += sql.SQL(" AS ") + sql.Identifier(item["alias"])
+
+    if "on" in item:
+        statement += sql.SQL(" ON ")
+        statement, values = ep.parse_expression(
+            item["on"], statement, values, sql.SQL(" AND ")
+        )
 
     return statement, values
 
@@ -209,23 +232,7 @@ def parse_from(
 
     statement += sql.SQL(" FROM ")
     for index, item in enumerate(items):
-        if index > 0:
-            if "type" not in item:
-                raise ValueError("JOIN items must have 'type'")
-
-            join_type = item["type"].upper()
-            if join_type not in ("INNER", "LEFT", "RIGHT", "FULL", "CROSS"):
-                raise ValueError(f"Invalid join type: {join_type}")
-
-            statement += sql.SQL(f" {join_type} JOIN ")
-
-        statement, values = parse_from_item(item, statement, values)
-
-        if "on" in item:
-            statement += sql.SQL(" ON ")
-            statement, values = ep.parse_expression_list(
-                item["on"], statement, values, sql.SQL(" AND ")
-            )
+        statement, values = parse_from_item(item, statement, values, index)
     return statement, values
 
 
@@ -237,7 +244,7 @@ def parse_where(
     """
 
     statement += sql.SQL(" WHERE ")
-    return ep.parse_expression_list(items, statement, values, joiner=sql.SQL(" AND "))
+    return ep.parse_expression(items, statement, values, joiner=sql.SQL(" AND "))
 
 
 def parse_group_by(
@@ -248,7 +255,7 @@ def parse_group_by(
     """
 
     statement += sql.SQL(" GROUP BY ")
-    return ep.parse_expression_list(items, statement, values, joiner=sql.SQL(" AND "))
+    return ep.parse_expression(items, statement, values, joiner=sql.SQL(" AND "))
 
 
 def parse_having(
@@ -259,7 +266,7 @@ def parse_having(
     """
 
     statement += sql.SQL(" HAVING ")
-    return ep.parse_expression_list(items, statement, values, joiner=sql.SQL(" AND "))
+    return ep.parse_expression(items, statement, values, joiner=sql.SQL(" AND "))
 
 
 def parse_order_by_item(
@@ -286,9 +293,7 @@ def parse_order_by(
     """
 
     statement += sql.SQL(" ORDER BY ")
-    return ep.parse_expression_list(
-        items, statement, values, parser=parse_order_by_item
-    )
+    return ep.parse_expression(items, statement, values, parser=parse_order_by_item)
 
 
 def parse_limit(
@@ -321,7 +326,7 @@ def parse_returning(
     """
 
     statement += sql.SQL(" RETURNING ")
-    return ep.parse_expression_list(items, statement, values)
+    return ep.parse_expression(items, statement, values)
 
 
 def build_statement(
