@@ -294,6 +294,48 @@ class TestQueryBuilder(unittest.TestCase):
 
         asyncio.run(test())
 
+    def test_single_value_in(self):
+        """
+        Test building a query where the IN operator has a single value, not a list
+        """
+
+        async def test():
+            async with await self.pg.connect() as conn:
+                await self.pg.replace_table("test_table", conn, name="TEXT")
+                await self.pg.list_add_rows(
+                    "test_table",
+                    conn,
+                    {"name": "Test1"},
+                    {"name": "Test2"},
+                    {"name": "Test3"},
+                )
+
+                statement, values = qb.build_statement(
+                    {
+                        "select": [{"column": "name"}],
+                        "from": [{"table": "test_table"}],
+                        "where": [
+                            {
+                                "left": {"column": "name"},
+                                "operator": "IN",
+                                "right": {"value": "Test1"},
+                            }
+                        ],
+                    }
+                )
+
+                async with conn.cursor(row_factory=dict_row) as cur:
+                    print(f"\nStatement: {statement.as_string()}\n")
+                    print(f"Values: {values}\n")
+
+                    await cur.execute(statement, values)
+                    rows = await cur.fetchall()
+                    self.assertIsInstance(rows, list)
+                    for row in rows:
+                        print(f"Row: {row}")
+
+        asyncio.run(test())
+
     def test_build_insert(self):
         """
         Test building a statement

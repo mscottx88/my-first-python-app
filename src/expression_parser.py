@@ -17,11 +17,14 @@ def parse_expression_list(
         Callable[[Any, sql.Composable, list[Any]], tuple[sql.Composable, list[Any]]]
         | None
     ) = None,
+    wrap: bool = False,
 ) -> tuple[sql.Composable, list[Any]]:
     """
     Parse a list of expressions.
     """
 
+    if wrap:
+        statement += sql.SQL("(")
     for index, expression in enumerate(expressions):
         if index > 0:
             statement += joiner if joiner else sql.SQL(", ")
@@ -30,6 +33,8 @@ def parse_expression_list(
             if parser
             else parse_expression(expression, statement, values)
         )
+    if wrap:
+        statement += sql.SQL(")")
     return statement, values
 
 
@@ -80,17 +85,15 @@ def parse_function(
     if "function_name" not in kwargs:
         raise ValueError("Function call requires 'function_name' argument")
 
-    function_name = kwargs["function_name"].upper()
-    if function_name not in ("MAX", "TRIM", "UPPER"):
+    function_name = kwargs["function_name"]
+    if function_name.upper().strip() not in ("IN", "MAX", "TRIM", "UPPER"):
         raise ValueError(f"Unsupported function: {function_name}")
 
     if "schema_name" in kwargs:
-        statement += sql.SQL(".") + sql.Identifier(kwargs["schema_name"])
+        statement += sql.Identifier(kwargs["schema_name"]) + sql.SQL(".")
     statement += sql.SQL(function_name)
 
-    statement += sql.SQL("(")
-    statement, values = parse_expression(kwargs.get("args", []), statement, values)
-    return statement + sql.SQL(")"), values
+    return parse_expression(kwargs.get("args", []), statement, values, wrap=True)
 
 
 def parse_infix_operator(
@@ -101,15 +104,18 @@ def parse_infix_operator(
     **kwargs: Any,
 ) -> tuple[sql.Composable, list[Any]]:
     """
-    Parse a binary operator.
+    Parse an infix operator.
     """
 
-    if not ("left" in kwargs and "right" in kwargs):
+    if "expressions" in kwargs:
+        expressions = kwargs["expressions"]
+    elif not ("left" in kwargs and "right" in kwargs):
         raise ValueError(f"Operator '{operator}' requires 'left' and 'right' arguments")
+    else:
+        expressions = [kwargs["left"], kwargs["right"]]
 
-    statement, values = parse_expression(kwargs["left"], statement, values)
-    statement += operator
-    return parse_expression(kwargs["right"], statement, values)
+    wrap = bool(kwargs.get("wrap", False))
+    return parse_expression(expressions, statement, values, joiner=operator, wrap=wrap)
 
 
 def parse_prefix_operator(
@@ -120,7 +126,7 @@ def parse_prefix_operator(
     **kwargs: Any,
 ) -> tuple[sql.Composable, list[Any]]:
     """
-    Parse a unary operator.
+    Parse a prefix operator.
     """
 
     if "operand" not in kwargs:
@@ -141,7 +147,7 @@ def parse_mixed_operator(
     Parse a mixed operator.
     """
 
-    if "left" in kwargs and "right" in kwargs:
+    if ("left" in kwargs and "right" in kwargs) or "expressions" in kwargs:
         return parse_infix_operator(operator, statement, values, **kwargs)
 
     operand = kwargs["operand"] if "operand" in kwargs else kwargs["left"]
@@ -151,26 +157,8 @@ def parse_mixed_operator(
         )
 
     raise ValueError(
-        f"Operator '{operator}' requires 'operand', 'left', and/or 'right' arguments"
+        f"Operator '{operator}' requires 'operand', 'left', and 'right' or 'expressions' arguments"
     )
-
-
-def parse_operator_and(
-    statement: sql.Composable, values: list[Any], /, **kwargs: Any
-) -> tuple[sql.Composable, list[Any]]:
-    """
-    Parse an AND operator.
-    """
-
-    if "expressions" not in kwargs:
-        raise ValueError("AND operator requires 'expressions' argument")
-
-    statement += sql.SQL("(")
-    statement, values = parse_expression(
-        kwargs["expressions"], statement, values, sql.SQL(" AND ")
-    )
-    statement += sql.SQL(")")
-    return statement, values
 
 
 def parse_operator_cast(
@@ -272,33 +260,13 @@ def parse_operator_in(
     if not ("left" in kwargs and "right" in kwargs):
         raise ValueError("IN operator requires 'left' and 'right' arguments")
 
-    if not isinstance(kwargs["right"], list):
-        raise ValueError("IN operator 'right' argument must be a list")
+    args = cast(
+        list[Any],
+        kwargs["right"] if isinstance(kwargs["right"], list) else [kwargs["right"]],
+    )
 
     statement, values = parse_expression(kwargs["left"], statement, values)
-    statement += sql.SQL(" IN (")
-    statement, values = parse_expression(
-        cast(list[Any], kwargs["right"]), statement, values
-    )
-    return statement + sql.SQL(")"), values
-
-
-def parse_operator_or(
-    statement: sql.Composable, values: list[Any], /, **kwargs: Any
-) -> tuple[sql.Composable, list[Any]]:
-    """
-    Parse an OR operator.
-    """
-
-    if "expressions" not in kwargs:
-        raise ValueError("AND operator requires 'expressions' argument")
-
-    statement += sql.SQL("(")
-    statement, values = parse_expression(
-        kwargs["expressions"], statement, values, sql.SQL(" OR ")
-    )
-    statement += sql.SQL(")")
-    return statement, values
+    return parse_function(statement, values, function_name=" IN ", args=args)
 
 
 def parse_operator_trim(
@@ -348,14 +316,14 @@ def parse_operator(
             return parse_mixed_operator(
                 sql.SQL(f" {operator} "), statement, values, **kwargs
             )
-        case "AND":
-            return parse_operator_and(statement, values, **kwargs)
+        case "AND" | "OR":
+            return parse_infix_operator(
+                sql.SQL(f" {operator} "), statement, values, **kwargs, wrap=True
+            )
         case "CAST":
             return parse_operator_cast(statement, values, **kwargs)
         case "IN":
             return parse_operator_in(statement, values, **kwargs)
-        case "OR":
-            return parse_operator_or(statement, values, **kwargs)
         case "TRIM":
             return parse_operator_trim(statement, values, **kwargs)
         case _:
@@ -407,13 +375,16 @@ def parse_expression(
         Callable[[Any, sql.Composable, list[Any]], tuple[sql.Composable, list[Any]]]
         | None
     ) = None,
+    wrap: bool = False,
 ) -> tuple[sql.Composable, list[Any]]:
     """
     Parse a single expression.
     """
 
     if isinstance(expression, list):
-        return parse_expression_list(expression, statement, values, joiner, parser)
+        return parse_expression_list(
+            expression, statement, values, joiner, parser, wrap
+        )
 
     if "column" in expression:
         return parse_column(statement, values, **expression)

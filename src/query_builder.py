@@ -63,8 +63,7 @@ def parse_with_item(
         else:
             statement += sql.SQL(" NOT MATERIALIZED")
 
-    statement += sql.SQL(" ")
-    return ep.parse_expression(item, statement, values)
+    return ep.parse_expression(item, statement + sql.SQL(" "), values)
 
 
 def parse_with(
@@ -174,9 +173,7 @@ def parse_values(
     for index, item in enumerate(items):
         if index > 0:
             statement += sql.SQL(", ")
-        statement += sql.SQL("(")
-        statement, values = ep.parse_expression(item, statement, values)
-        statement += sql.SQL(")")
+        statement, values = ep.parse_expression(item, statement, values, wrap=True)
     return statement, values
 
 
@@ -215,9 +212,8 @@ def parse_from_item(
         statement += sql.SQL(" AS ") + sql.Identifier(item["alias"])
 
     if "on" in item:
-        statement += sql.SQL(" ON ")
         statement, values = ep.parse_expression(
-            item["on"], statement, values, sql.SQL(" AND ")
+            item["on"], statement + sql.SQL(" ON "), values, sql.SQL(" AND ")
         )
 
     return statement, values
