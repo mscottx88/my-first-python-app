@@ -43,12 +43,12 @@ class TestQueryBuilder(unittest.TestCase):
                     {
                         "combine": [
                             {
-                                "sub_query": {
+                                "sub query": {
                                     "with": [
                                         {
                                             "name": "cte_example",
                                             "columns": ["name"],
-                                            "sub_query": {
+                                            "sub query": {
                                                 "select": [{"column": "name"}],
                                                 "from": [{"table": "test_table"}],
                                                 "where": [
@@ -127,7 +127,7 @@ class TestQueryBuilder(unittest.TestCase):
                                             "alias": "cast_decimal",
                                         },
                                         {
-                                            "sub_query": {
+                                            "sub query": {
                                                 "select": [{"column": "name"}],
                                                 "from": [{"table": "test_table"}],
                                                 "where": [
@@ -144,7 +144,7 @@ class TestQueryBuilder(unittest.TestCase):
                                     "from": [
                                         {"table": "cte_example"},
                                         {
-                                            "sub_query": {
+                                            "sub query": {
                                                 "select": [
                                                     {
                                                         "value": "Test10",
@@ -227,7 +227,7 @@ class TestQueryBuilder(unittest.TestCase):
                                             "operator": "IN",
                                             "right": [
                                                 {
-                                                    "sub_query": {
+                                                    "sub query": {
                                                         "select": [{"value": "name"}],
                                                     }
                                                 },
@@ -235,7 +235,7 @@ class TestQueryBuilder(unittest.TestCase):
                                             ],
                                         },
                                     ],
-                                    "group_by": [{"column": "name"}],
+                                    "group by": [{"column": "name"}],
                                     "having": [
                                         {
                                             "left": {"column": "name"},
@@ -243,7 +243,7 @@ class TestQueryBuilder(unittest.TestCase):
                                             "right": {"value": "Test2"},
                                         },
                                     ],
-                                    "order_by": [
+                                    "order by": [
                                         {
                                             "column": "name",
                                             "direction": "ASC",
@@ -256,11 +256,11 @@ class TestQueryBuilder(unittest.TestCase):
                                     "limit": {"value": 100},
                                     "offset": {"value": 0},
                                 },
-                                "type": "UNION",
-                                "all": False,
+                                "type": "union",
+                                "all": True,
                             },
                             {
-                                "sub_query": {
+                                "sub query": {
                                     "select": [
                                         {"column": "name"},
                                         {"value": 2},

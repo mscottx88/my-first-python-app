@@ -4,12 +4,12 @@ Expression parser for SQL statements.
 This module shares a mutually recursive relationship with the query builder module.
 A query can itself contain many expressions, which can also be sub-queries.
 The query builder entry point constructs the query from the current top-level dictionary,
-and if there are any sub_query values, the parse_expression function invokes the query builder
+and if there are any "sub query" values, the parse_expression function invokes the query builder
 to construct the sub-query recursively.
 """
 
 from operator import itemgetter
-from typing import Any, get_args
+from typing import Any, cast, get_args
 from psycopg import sql
 from src import models, operators as op
 import src.query_builder as qb
@@ -218,7 +218,7 @@ def parse_value(
 
 
 def parse_expression(
-    expression: list[dict[str, Any]] | dict[str, Any],
+    expression: Any,
     statement: sql.Composable,
     values: list[Any],
     *,
@@ -243,7 +243,12 @@ def parse_expression(
 
     if isinstance(expression, list):
         return parse_expression_list(
-            expression, statement, values, joiner=joiner, parser=parser, wrap=wrap
+            cast(list[dict[str, Any]], expression),
+            statement,
+            values,
+            joiner=joiner,
+            parser=parser,
+            wrap=wrap,
         )
 
     if "column" in expression:
@@ -261,7 +266,7 @@ def parse_expression(
     if "default" in expression and expression["default"]:
         return statement + sql.SQL("DEFAULT"), values
 
-    if "sub_query" in expression:
-        return qb.build_statement(expression["sub_query"], statement, values, wrap=True)
+    if "sub query" in expression:
+        return qb.build_statement(expression["sub query"], statement, values, wrap=True)
 
-    raise ValueError("Invalid expression")
+    raise ValueError(f"Invalid expression: {expression}")

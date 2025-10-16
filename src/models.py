@@ -7,6 +7,7 @@ from psycopg import sql
 from pydantic import (
     BaseModel,
     ConfigDict,
+    Field,
     computed_field,
     field_validator,
     model_validator,
@@ -36,6 +37,24 @@ class Product(BaseModel):
 
 type Parser = Callable[
     [Any, sql.Composable, list[Any]], tuple[sql.Composable, list[Any]]
+]
+
+Clauses = Literal[
+    "combine",
+    "with",
+    "delete",
+    "insert",
+    "select",
+    "update",
+    "values",
+    "from",
+    "where",
+    "group by",
+    "having",
+    "order by",
+    "limit",
+    "offset",
+    "returning",
 ]
 
 InfixOperators = Literal[
@@ -118,7 +137,7 @@ class BaseOperator(BaseModel, frozen=True):
     A base model for operators.
     """
 
-    model_config = ConfigDict(arbitrary_types_allowed=True)
+    model_config = ConfigDict(arbitrary_types_allowed=True, populate_by_name=True)
 
     operator: Union[InfixOperators, MixedOperators, PrefixOperators, VerboseOperators]
 
@@ -126,7 +145,7 @@ class BaseOperator(BaseModel, frozen=True):
     @classmethod
     def normalize_operator(cls, value: str) -> str:
         """
-        Normalize the operator.
+        Normalize the value.
         """
 
         return value.upper()
@@ -216,7 +235,7 @@ class CastOperator(BaseOperator, frozen=True):
     @classmethod
     def normalize_fields(cls, value: str) -> str:
         """
-        Normalize the type.
+        Normalize the value.
         """
 
         return value.upper()
@@ -258,3 +277,89 @@ class InOperator(BaseOperator, frozen=True):
         Get the function arguments.
         """
         return self.right if isinstance(self.right, list) else [self.right]  # type: ignore
+
+
+class BaseClause(BaseModel):
+    """
+    A base model for SQL clauses.
+    """
+
+    model_config = ConfigDict(arbitrary_types_allowed=True, populate_by_name=True)
+
+
+class CombineItem(BaseClause):
+    """
+    A model representing a combine item.
+    """
+
+    all: bool = False
+    sub_query: "Criteria" = Field(alias="sub query")
+    type: Literal["UNION", "INTERSECT", "EXCEPT"] | None = None
+
+    @field_validator("type", mode="before")
+    @classmethod
+    def normalize_fields(cls, value: str | None) -> str | None:
+        """
+        Normalize the value.
+        """
+
+        return value.upper() if value else None
+
+    @computed_field
+    @property
+    def combine_type(self) -> sql.Composable | None:
+        """
+        Get the combine type.
+        """
+        return sql.SQL(f" {self.type} ") if self.type else None
+
+
+class WithItem(BaseClause):
+    """
+    A model representing a WITH item.
+    """
+
+    columns: list[str] | None = None
+    name: str
+    materialized: bool | None = None
+    recursive: bool = False
+    sub_query: "Criteria" = Field(alias="sub query")
+
+
+class Criteria(BaseModel):
+    """
+    A model representing SQL criteria.
+    """
+
+    model_config = ConfigDict(arbitrary_types_allowed=True, populate_by_name=True)
+
+    combine: list[CombineItem] | None = None
+    with_: list[WithItem] | None = Field(default=None, alias="with")
+    delete: Any | None = None
+    insert: Any | None = None
+    select: list[Any] | None = None
+    update: Any | None = None
+    values: list[Any] | None = None
+    from_: list[Any] | None = Field(default=None, alias="from")
+    where: list[Any] | None = None
+    group_by: list[Any] | None = Field(default=None, alias="group by")
+    having: list[Any] | None = None
+    order_by: list[Any] | None = Field(default=None, alias="order by")
+    limit: Any | None = None
+    offset: Any | None = None
+    returning: list[Any] | None = None
+
+    @model_validator(mode="after")
+    def check_values(self) -> "Criteria":
+        """
+        Validate the model fields.
+        """
+
+        for index, combine_item in enumerate(self.combine or []):
+            if index < len(self.combine or []) - 1:
+                if combine_item.type is None:
+                    raise ValueError("Intermediate combine items must have 'type'")
+            elif combine_item.type is not None or combine_item.all:
+                raise ValueError("Final combine item cannot have 'type' or 'all'")
+
+        return self

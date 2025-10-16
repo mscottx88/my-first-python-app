@@ -7,6 +7,27 @@ from psycopg import sql
 from src import models, parsers
 
 
+def parse_combine_item(
+    item: Any, statement: sql.Composable, values: list[Any]
+) -> tuple[sql.Composable, list[Any]]:
+    """
+    Parse a single combine item.
+    """
+
+    model = models.CombineItem(**item)
+
+    statement, values = parsers.parse_expression(item, statement, values)
+
+    if model.combine_type:
+        statement += model.combine_type
+        if model.all:
+            statement += sql.SQL("ALL ")
+        else:
+            statement += sql.SQL("DISTINCT ")
+
+    return statement, values
+
+
 def parse_combine(
     items: list[Any], statement: sql.Composable, values: list[Any]
 ) -> tuple[sql.Composable, list[Any]]:
@@ -14,27 +35,9 @@ def parse_combine(
     Parse a combination of queries (e.g., UNION, INTERSECT).
     """
 
-    for index, item in enumerate(items):
-        statement, values = parsers.parse_expression(item, statement, values)
-
-        if index < len(items) - 1:
-            if "type" not in item:
-                raise ValueError("Intermediate combine items must have 'type'")
-
-            combine_type = item["type"].upper()
-            if combine_type not in ("UNION", "INTERSECT", "EXCEPT"):
-                raise ValueError(f"Invalid combine type: {combine_type}")
-
-            statement += sql.SQL(f" {combine_type} ")
-            if "all" in item and item["all"]:
-                statement += sql.SQL("ALL ")
-            else:
-                statement += sql.SQL("DISTINCT ")
-
-        elif "type" in item or "all" in item:
-            raise ValueError("Last combine item cannot have 'type' or 'all'")
-
-    return statement, values
+    return parsers.parse_expression(
+        items, statement, values, joiner=sql.SQL(""), parser=parse_combine_item
+    )
 
 
 def parse_with_item(
@@ -44,23 +47,20 @@ def parse_with_item(
     Parse a single WITH item.
     """
 
-    if "name" not in item or "sub_query" not in item:
-        raise ValueError("WITH item must have 'name' and 'sub_query'")
+    model = models.WithItem(**item)
 
-    if "recursive" in item and item["recursive"]:
+    if model.recursive:
         statement += sql.SQL("RECURSIVE ")
 
-    statement += sql.Identifier(item["name"])
+    statement += sql.Identifier(model.name)
 
-    if "columns" in item:
-        statement, values = parsers.parse_column_list(
-            item["columns"], statement, values
-        )
+    if model.columns:
+        statement, values = parsers.parse_column_list(model.columns, statement, values)
 
     statement += sql.SQL(" AS")
 
-    if "materialized" in item:
-        if item["materialized"]:
+    if model.materialized is not None:
+        if model.materialized:
             statement += sql.SQL(" MATERIALIZED")
         else:
             statement += sql.SQL(" NOT MATERIALIZED")
@@ -205,7 +205,7 @@ def parse_from_item(
 
         statement += sql.SQL(f" {join_type} JOIN ")
 
-    if "sub_query" in item:
+    if "sub query" in item:
         statement, values = parsers.parse_expression(item, statement, values)
     elif "table" in item:
         statement += sql.Identifier(item["table"])
@@ -331,7 +331,7 @@ def parse_returning(
     return parsers.parse_expression(items, statement, values)
 
 
-clauses: dict[str, models.Parser] = {
+clauses: dict[models.Clauses, models.Parser] = {
     "combine": parse_combine,
     "with": parse_with,
     "delete": parse_delete,
@@ -341,9 +341,9 @@ clauses: dict[str, models.Parser] = {
     "values": parse_values,
     "from": parse_from,
     "where": parse_where,
-    "group_by": parse_group_by,
+    "group by": parse_group_by,
     "having": parse_having,
-    "order_by": parse_order_by,
+    "order by": parse_order_by,
     "limit": parse_limit,
     "offset": parse_offset,
     "returning": parse_returning,
