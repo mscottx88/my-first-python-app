@@ -172,7 +172,7 @@ class TestQueryBuilder(unittest.TestCase):
                                             "operator": "OR",
                                             "expressions": [
                                                 {
-                                                    "operator": "AND",
+                                                    "operator": "aNd",
                                                     "expressions": [
                                                         {
                                                             "left": {"column": "name"},
@@ -319,7 +319,30 @@ class TestQueryBuilder(unittest.TestCase):
                                 "left": {"column": "name"},
                                 "operator": "IN",
                                 "right": {"value": "Test1"},
-                            }
+                            },
+                            {
+                                "operator": "NOT",
+                                "operand": {
+                                    "operator": "IN",
+                                    "left": {"column": "name"},
+                                    "right": {"value": "Test3"},
+                                },
+                            },
+                            {
+                                "expression": {"column": "name"},
+                                "operator": "BETWEEN",
+                                "symmetric": True,
+                                "right": {"value": "Test"},
+                                "left": {"value": "Testÿ"},
+                            },
+                            {
+                                "operator": "NOT",
+                                "operand": {
+                                    "left": {"value": False},
+                                    "operator": "IS",
+                                    "right": True,
+                                },
+                            },
                         ],
                     }
                 )
