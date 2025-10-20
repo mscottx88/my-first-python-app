@@ -138,7 +138,7 @@ def parse_function(
     else:
         statement += sql.SQL(model.function_name)
 
-    return parse_expression(model.args, statement, values, wrap=True)
+    return parse_expression(kwargs.get("args", []), statement, values, wrap=True)
 
 
 def parse_operator(
@@ -246,22 +246,20 @@ def parse_expression(
             wrap=wrap,
         )
 
-    if "column" in expression:
-        return parse_column(statement, values, **expression)
-
-    if "default" in expression and expression["default"]:
-        return statement + sql.SQL("DEFAULT"), values
-
-    if "function name" in expression:
-        return parse_function(statement, values, **expression)
-
-    if "operator" in expression:
-        return parse_operator(statement, values, **expression)
-
-    if "sub query" in expression:
-        return qb.build_statement(expression["sub query"], statement, values, wrap=True)
-
-    if "value" in expression:
-        return parse_value(statement, values, **expression)
-
-    raise ValueError(f"Invalid expression: {expression}")
+    match models.get_expression_type(expression):
+        case "column":
+            return parse_column(statement, values, **expression)
+        case "default":
+            return statement + sql.SQL("DEFAULT"), values
+        case "function":
+            return parse_function(statement, values, **expression)
+        case "operator":
+            return parse_operator(statement, values, **expression)
+        case "sub query":
+            return qb.build_statement(
+                expression["sub query"], statement, values, wrap=True
+            )
+        case "value":
+            return parse_value(statement, values, **expression)
+        case _:
+            raise ValueError(f"Unsupported expression type: {expression}")

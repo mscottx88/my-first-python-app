@@ -116,10 +116,12 @@ def parse_select_item(
     Parse a single SELECT item.
     """
 
+    model = models.SelectItem(**item)
+
     statement, values = parsers.parse_expression(item, statement, values)
 
-    if "alias" in item:
-        statement += sql.SQL(" AS ") + sql.Identifier(item["alias"])
+    if model.alias:
+        statement += sql.SQL(" AS ") + sql.Identifier(model.alias)
 
     return statement, values
 

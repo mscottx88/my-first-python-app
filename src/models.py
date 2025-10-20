@@ -2,16 +2,51 @@
 Data models for the application.
 """
 
-from typing import Any, Callable, Literal
+from typing import Annotated, Any, Callable, Literal, Union
 from psycopg import sql
 from pydantic import (
     BaseModel,
     ConfigDict,
+    Discriminator,
     Field,
+    Tag,
     computed_field,
     field_validator,
     model_validator,
 )
+
+
+def get_expression_type(data: Any) -> str:
+    """
+    Get the expression type from the data.
+    """
+
+    if isinstance(data, list):
+        return "list[ExpressionItem]"
+    if data is None:
+        return "none"
+    if isinstance(data, bool):
+        return "bool"
+    if isinstance(data, int):
+        return "int"
+    if isinstance(data, float):
+        return "float"
+    if isinstance(data, str):
+        return "str"
+    if "column" in data:
+        return "column"
+    if "default" in data:
+        return "default"
+    if "function name" in data:
+        return "function"
+    if "operator" in data:
+        return "operator"
+    if "sub query" in data:
+        return "sub query"
+    if "value" in data:
+        return "value"
+
+    raise ValueError("Invalid expression type")
 
 
 class Product(BaseModel):
@@ -165,7 +200,7 @@ class FunctionExpression(BaseExpression, frozen=True):
     A model representing a function expression.
     """
 
-    args: list[Any] | None = []
+    args: list["ExpressionItem"] | None = []
     function_name: FunctionNames = Field(alias="function name")
     pad: bool = False
     schema_name: str | None = None
@@ -186,10 +221,10 @@ class OperatorExpression(BaseExpression, frozen=True):
     """
 
     operator: str
-    expressions: Any | list[Any] | None = None
-    left: Any | None = None
-    right: Any | None = None
-    operand: Any | None = None
+    expressions: Union["ExpressionItem", list["ExpressionItem"], None] = None
+    left: Union["ExpressionItem", None] = None
+    right: Union["ExpressionItem", None] = None
+    operand: Union["ExpressionItem", None] = None
 
 
 class SubQueryExpression(BaseExpression, frozen=True):
@@ -412,6 +447,31 @@ class InsertItem(BaseClause):
     table: str
 
 
+type ExpressionItem = Annotated[
+    Annotated[list["ExpressionItem"], Tag("list[ExpressionItem]")]
+    | Annotated[None, Tag("none")]
+    | Annotated[bool, Tag("bool")]
+    | Annotated[int, Tag("int")]
+    | Annotated[float, Tag("float")]
+    | Annotated[str, Tag("str")]
+    | Annotated[ColumnExpression, Tag("column")]
+    | Annotated[DefaultExpression, Tag("default")]
+    | Annotated[FunctionExpression, Tag("function")]
+    | Annotated[OperatorExpression, Tag("operator")]
+    | Annotated[SubQueryExpression, Tag("sub query")]
+    | Annotated[ValueExpression, Tag("value")],
+    Discriminator(get_expression_type),
+]
+
+
+class SelectItem(BaseClause):
+    """
+    A model representing a SELECT item.
+    """
+
+    alias: str | None = None
+
+
 class Criteria(BaseModel):
     """
     A model representing SQL criteria.
@@ -423,17 +483,17 @@ class Criteria(BaseModel):
     with_: list[WithItem] | None = Field(default=None, alias="with")
     delete: Any | None = None
     insert: InsertItem | None = None
-    select: list[Any] | None = None
+    select: list[Annotated[ExpressionItem, SelectItem]] | None = None
     update: Any | None = None
-    values: list[Any] | None = None
+    values: list[list[ExpressionItem]] | None = None
     from_: list[Any] | None = Field(default=None, alias="from")
-    where: list[Any] | None = None
-    group_by: list[Any] | None = Field(default=None, alias="group by")
-    having: list[Any] | None = None
-    order_by: list[Any] | None = Field(default=None, alias="order by")
-    limit: Any | None = None
-    offset: Any | None = None
-    returning: list[Any] | None = None
+    where: list[ExpressionItem] | None = None
+    group_by: list[ExpressionItem] | None = Field(default=None, alias="group by")
+    having: list[ExpressionItem] | None = None
+    order_by: list[ExpressionItem] | None = Field(default=None, alias="order by")
+    limit: ExpressionItem | None = None
+    offset: ExpressionItem | None = None
+    returning: list[ExpressionItem] | None = None
 
     @model_validator(mode="after")
     def check_values(self) -> "Criteria":
