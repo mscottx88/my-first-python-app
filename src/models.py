@@ -2,7 +2,7 @@
 Data models for the application.
 """
 
-from typing import Any, Callable, Literal, Union
+from typing import Any, Callable, Literal
 from psycopg import sql
 from pydantic import (
     BaseModel,
@@ -131,6 +131,82 @@ TimeIntervals = Literal[
     "MINUTE TO SECOND",
 ]
 
+FunctionNames = Literal["IN", "MAX", "TRIM", "UPPER"]
+
+
+class BaseExpression(BaseModel, frozen=True):
+    """
+    A base model for SQL expressions.
+    """
+
+    model_config = ConfigDict(arbitrary_types_allowed=True, populate_by_name=True)
+    wrap: bool = False
+
+
+class ColumnExpression(BaseExpression, frozen=True):
+    """
+    A model representing a column expression.
+    """
+
+    column: str | Literal["*"]
+    correlation: str | None = None
+
+
+class DefaultExpression(BaseExpression, frozen=True):
+    """
+    A model representing a default expression.
+    """
+
+    default: bool = True
+
+
+class FunctionExpression(BaseExpression, frozen=True):
+    """
+    A model representing a function expression.
+    """
+
+    args: list[Any] | None = []
+    function_name: FunctionNames = Field(alias="function name")
+    pad: bool = False
+    schema_name: str | None = None
+
+    @field_validator("function_name", mode="before")
+    @classmethod
+    def normalize_values(cls, value: str) -> str:
+        """
+        Normalize the value.
+        """
+
+        return value.upper()
+
+
+class OperatorExpression(BaseExpression, frozen=True):
+    """
+    A model representing an operator expression.
+    """
+
+    operator: str
+    expressions: Any | list[Any] | None = None
+    left: Any | None = None
+    right: Any | None = None
+    operand: Any | None = None
+
+
+class SubQueryExpression(BaseExpression, frozen=True):
+    """
+    A model representing a sub query expression.
+    """
+
+    sub_query: "Criteria" = Field(alias="sub query")
+
+
+class ValueExpression(BaseExpression, frozen=True):
+    """
+    A model representing a value expression.
+    """
+
+    value: bool | int | float | str | None
+
 
 class BaseOperator(BaseModel, frozen=True):
     """
@@ -139,11 +215,11 @@ class BaseOperator(BaseModel, frozen=True):
 
     model_config = ConfigDict(arbitrary_types_allowed=True, populate_by_name=True)
 
-    operator: Union[InfixOperators, MixedOperators, PrefixOperators, VerboseOperators]
+    operator: InfixOperators | MixedOperators | PrefixOperators | VerboseOperators
 
     @field_validator("operator", mode="before")
     @classmethod
-    def normalize_operator(cls, value: str) -> str:
+    def normalize_values(cls, value: str) -> str:
         """
         Normalize the value.
         """
@@ -233,7 +309,7 @@ class CastOperator(BaseOperator, frozen=True):
 
     @field_validator("interval", "type", mode="before")
     @classmethod
-    def normalize_fields(cls, value: str) -> str:
+    def normalize_values(cls, value: str) -> str:
         """
         Normalize the value.
         """
@@ -298,7 +374,7 @@ class CombineItem(BaseClause):
 
     @field_validator("type", mode="before")
     @classmethod
-    def normalize_fields(cls, value: str | None) -> str | None:
+    def normalize_values(cls, value: str | None) -> str | None:
         """
         Normalize the value.
         """
@@ -326,6 +402,16 @@ class WithItem(BaseClause):
     sub_query: "Criteria" = Field(alias="sub query")
 
 
+class InsertItem(BaseClause):
+    """
+    A model representing an INSERT item.
+    """
+
+    alias: str | None = None
+    columns: list[str] | None = None
+    table: str
+
+
 class Criteria(BaseModel):
     """
     A model representing SQL criteria.
@@ -336,7 +422,7 @@ class Criteria(BaseModel):
     combine: list[CombineItem] | None = None
     with_: list[WithItem] | None = Field(default=None, alias="with")
     delete: Any | None = None
-    insert: Any | None = None
+    insert: InsertItem | None = None
     select: list[Any] | None = None
     update: Any | None = None
     values: list[Any] | None = None

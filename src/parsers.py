@@ -93,20 +93,19 @@ def parse_column(
         tuple[sql.Composable, list[Any]]: Updated SQL statement and values list.
     """
 
-    if "column" not in kwargs:
-        raise ValueError("Column reference requires 'column' argument")
+    model = models.ColumnExpression(**kwargs)
 
     wrap = kwargs.get("wrap", False)
     if wrap:
         statement += sql.SQL("(")
 
-    if "correlation" in kwargs:
-        statement += sql.Identifier(kwargs["correlation"]) + sql.SQL(".")
+    if model.correlation:
+        statement += sql.Identifier(model.correlation) + sql.SQL(".")
 
-    if kwargs["column"] == "*":
+    if model.column == "*":
         statement += sql.SQL("*")
     else:
-        statement += sql.Identifier(kwargs["column"])
+        statement += sql.Identifier(model.column)
 
     if wrap:
         statement += sql.SQL(")")
@@ -129,18 +128,17 @@ def parse_function(
         tuple[sql.Composable, list[Any]]: Updated SQL statement and values list.
     """
 
-    if "function_name" not in kwargs:
-        raise ValueError("Function call requires 'function_name' argument")
+    model = models.FunctionExpression(**kwargs)
 
-    function_name = kwargs["function_name"]
-    if function_name.upper().strip() not in ("IN", "MAX", "TRIM", "UPPER"):
-        raise ValueError(f"Unsupported function: {function_name}")
+    if model.schema_name:
+        statement += sql.Identifier(model.schema_name) + sql.SQL(".")
 
-    if "schema_name" in kwargs:
-        statement += sql.Identifier(kwargs["schema_name"]) + sql.SQL(".")
-    statement += sql.SQL(function_name)
+    if model.pad:
+        statement += sql.SQL(f" {model.function_name} ")
+    else:
+        statement += sql.SQL(model.function_name)
 
-    return parse_expression(kwargs.get("args", []), statement, values, wrap=True)
+    return parse_expression(model.args, statement, values, wrap=True)
 
 
 def parse_operator(
@@ -189,32 +187,29 @@ def parse_value(
         tuple[sql.Composable, list[Any]]: Updated SQL statement and values list.
     """
 
-    if "value" not in kwargs:
-        raise ValueError("Value requires 'value' argument")
+    model = models.ValueExpression(**kwargs)
 
-    value = kwargs["value"]
-
-    if value is None:
+    if model.value is None:
         statement += sql.Placeholder()
         values.append(None)
         return statement, values
 
-    if isinstance(value, bool):
+    if isinstance(model.value, bool):
         statement += sql.Placeholder()
-        values.append(bool(value))
+        values.append(bool(model.value))
         return statement, values
 
-    if isinstance(value, (int, float)):
+    if isinstance(model.value, (int, float)):
         statement += sql.Placeholder()
-        values.append(value)
+        values.append(model.value)
         return statement, values
 
-    if isinstance(value, str):
+    if isinstance(model.value, str):
         statement += sql.Placeholder()
-        values.append(value)
+        values.append(model.value)
         return statement, values
 
-    raise ValueError(f"Unsupported value type: {type(value)}")
+    raise ValueError(f"Unsupported value type: {type(model.value)}")
 
 
 def parse_expression(
@@ -254,19 +249,19 @@ def parse_expression(
     if "column" in expression:
         return parse_column(statement, values, **expression)
 
-    if "function_name" in expression:
+    if "default" in expression and expression["default"]:
+        return statement + sql.SQL("DEFAULT"), values
+
+    if "function name" in expression:
         return parse_function(statement, values, **expression)
 
     if "operator" in expression:
         return parse_operator(statement, values, **expression)
 
-    if "value" in expression:
-        return parse_value(statement, values, **expression)
-
-    if "default" in expression and expression["default"]:
-        return statement + sql.SQL("DEFAULT"), values
-
     if "sub query" in expression:
         return qb.build_statement(expression["sub query"], statement, values, wrap=True)
+
+    if "value" in expression:
+        return parse_value(statement, values, **expression)
 
     raise ValueError(f"Invalid expression: {expression}")

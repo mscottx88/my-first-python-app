@@ -28,7 +28,7 @@ def build_statement(
         tuple[sql.Composed, list[Any]]: The final SQL statement and values list.
     """
 
-    model = models.Criteria(**criteria).model_dump(by_alias=True)
+    models.Criteria(**criteria)
 
     if statement is None:
         statement = sql.SQL("")
@@ -39,8 +39,8 @@ def build_statement(
         values = []
 
     for key, parser in clauses.items():
-        if key in model and model[key] is not None:
-            statement, values = parser(model[key], statement, values)
+        if key in criteria and criteria[key] is not None:
+            statement, values = parser(criteria[key], statement, values)
 
     if wrap:
         statement += sql.SQL(")")

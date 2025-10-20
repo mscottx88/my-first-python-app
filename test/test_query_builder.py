@@ -64,7 +64,7 @@ class TestQueryBuilder(unittest.TestCase):
                                     ],
                                     "select": [
                                         {
-                                            "function_name": "max",
+                                            "function name": "max",
                                             "args": [
                                                 {
                                                     "column": "name2",
@@ -96,12 +96,12 @@ class TestQueryBuilder(unittest.TestCase):
                                             "alias": "div",
                                         },
                                         {
-                                            "function_name": "upper",
+                                            "function name": "upper",
                                             "args": [{"column": "name"}],
                                             "alias": "upper",
                                         },
                                         {
-                                            "function_name": "trim",
+                                            "function name": "trim",
                                             "args": [
                                                 {
                                                     "operator": "CAST",

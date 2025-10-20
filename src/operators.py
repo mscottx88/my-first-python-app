@@ -129,7 +129,7 @@ def parse_in_operator(
 
     statement, values = parsers.parse_expression(model.left, statement, values)
     return parsers.parse_function(
-        statement, values, function_name=" IN ", args=model.args
+        statement, values, function_name="IN", args=model.args, pad=True
     )
 
 

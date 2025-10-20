@@ -96,18 +96,15 @@ def parse_insert(
     Parse an INSERT statement.
     """
 
-    if "table" not in item:
-        raise ValueError("INSERT statement must have 'table'")
+    model = models.InsertItem(**item)
 
-    statement += sql.SQL(" INSERT INTO ") + sql.Identifier(item["table"])
+    statement += sql.SQL(" INSERT INTO ") + sql.Identifier(model.table)
 
-    if "alias" in item:
-        statement += sql.SQL(" AS ") + sql.Identifier(item["alias"])
+    if model.alias:
+        statement += sql.SQL(" AS ") + sql.Identifier(model.alias)
 
-    if "columns" in item:
-        statement, values = parsers.parse_column_list(
-            item["columns"], statement, values
-        )
+    if model.columns:
+        statement, values = parsers.parse_column_list(model.columns, statement, values)
 
     return statement, values
 
