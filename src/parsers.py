@@ -98,15 +98,9 @@ def parse_column(
     wrap = kwargs.get("wrap", False)
     if wrap:
         statement += sql.SQL("(")
-
     if model.correlation:
         statement += sql.Identifier(model.correlation) + sql.SQL(".")
-
-    if model.column == "*":
-        statement += sql.SQL("*")
-    else:
-        statement += sql.Identifier(model.column)
-
+    statement += sql.SQL("*") if model.column == "*" else sql.Identifier(model.column)
     if wrap:
         statement += sql.SQL(")")
 
@@ -204,12 +198,9 @@ def parse_value(
         values.append(model.value)
         return statement, values
 
-    if isinstance(model.value, str):
-        statement += sql.Placeholder()
-        values.append(model.value)
-        return statement, values
-
-    raise ValueError(f"Unsupported value type: {type(model.value)}")
+    statement += sql.Placeholder()
+    values.append(model.value)
+    return statement, values
 
 
 def parse_expression(

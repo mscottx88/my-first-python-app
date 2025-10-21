@@ -275,10 +275,10 @@ class InfixOperator(BaseOperator, frozen=True):
     A model representing an infix operator.
     """
 
-    expressions: Any | Sequence[Any] | None = None
+    expressions: Union["ExpressionItem", Sequence["ExpressionItem"], None] = None
     operator: InfixOperators
-    left: Any | None = None
-    right: Any | None = None
+    left: Union["ExpressionItem", None] = None
+    right: Union["ExpressionItem", None] = None
     wrap: bool = False
 
     @model_validator(mode="after")
@@ -299,11 +299,24 @@ class MixedOperator(BaseOperator, frozen=True):
     A model representing a mixed operator.
     """
 
-    expressions: Any | Sequence[Any] | None = None
-    left: Any | None = None
-    operand: Any | None = None
+    expressions: Union["ExpressionItem", Sequence["ExpressionItem"], None] = None
+    left: Union["ExpressionItem", None] = None
+    operand: Union["ExpressionItem", None] = None
     operator: MixedOperators
-    right: Any | None = None
+    right: Union["ExpressionItem", None] = None
+
+    @model_validator(mode="after")
+    def check_values(self) -> "MixedOperator":
+        """
+        Validate the model fields.
+        """
+
+        if self.expressions or self.operand or (self.left and self.right):
+            return self
+
+        raise ValueError(
+            f"Operator '{self.operator}' requires 'expressions', 'operand' or 'left' and 'right' arguments"
+        )
 
 
 class PrefixOperator(BaseOperator, frozen=True):
@@ -312,7 +325,7 @@ class PrefixOperator(BaseOperator, frozen=True):
     """
 
     operator: PrefixOperators
-    operand: Any
+    operand: "ExpressionItem"
 
 
 class BetweenOperator(BaseOperator, frozen=True):
@@ -320,9 +333,9 @@ class BetweenOperator(BaseOperator, frozen=True):
     A model representing a BETWEEN operator.
     """
 
-    expression: Any
-    left: Any
-    right: Any
+    expression: "ExpressionItem"
+    left: "ExpressionItem"
+    right: "ExpressionItem"
     operator: Literal["BETWEEN"]
     symmetric: bool = False
 
@@ -332,7 +345,7 @@ class CastOperator(BaseOperator, frozen=True):
     A model representing a CAST operator.
     """
 
-    expression: Any
+    expression: "ExpressionItem"
     type: DataTypes
     interval: TimeIntervals | None = None
     operator: Literal["CAST"]
@@ -377,17 +390,9 @@ class InOperator(BaseOperator, frozen=True):
     A model representing an IN operator.
     """
 
-    left: Any
+    left: "ExpressionItem"
     operator: Literal["IN"]
-    right: Sequence[Any] | Any
-
-    @computed_field
-    @property
-    def args(self) -> Sequence[Any]:
-        """
-        Get the function arguments.
-        """
-        return self.right if isinstance(self.right, list) else [self.right]  # type: ignore
+    right: Sequence["ExpressionItem"] | "ExpressionItem"
 
 
 class BaseClause(BaseModel):
@@ -478,7 +483,7 @@ class UpdateItem(BaseClause):
     """
 
     alias: str | None = None
-    set: dict[str, ExpressionItem]
+    set: dict[str, "ExpressionItem"]
     table: str
 
 
@@ -488,7 +493,7 @@ class FromItem(BaseClause):
     """
 
     alias: str | None = None
-    on: Sequence[ExpressionItem] | None = None
+    on: Sequence["ExpressionItem"] | None = None
     sub_query: Union["Criteria", None] = Field(default=None, alias="sub query")
     table: str | None = None
     type: Literal["INNER", "LEFT", "RIGHT", "FULL", "CROSS"] | None = None
@@ -530,25 +535,30 @@ class Criteria(BaseModel):
 
     combine: Sequence[CombineItem] | None = None
     with_: Sequence[WithItem] | None = Field(default=None, alias="with")
-    delete: Any | None = None
+    delete: bool | None = None
     insert: InsertItem | None = None
-    select: Sequence[Annotated[ExpressionItem, SelectItem]] | None = None
+    select: Sequence[Annotated["ExpressionItem", SelectItem]] | None = None
     update: UpdateItem | None = None
-    values: Sequence[Sequence[ExpressionItem]] | None = None
+    values: Sequence[Sequence["ExpressionItem"]] | None = None
     from_: Sequence[FromItem] | None = Field(default=None, alias="from")
-    where: Sequence[ExpressionItem] | None = None
-    group_by: Sequence[ExpressionItem] | None = Field(default=None, alias="group by")
-    having: Sequence[ExpressionItem] | None = None
-    order_by: Sequence[ExpressionItem] | None = Field(default=None, alias="order by")
-    limit: ExpressionItem | None = None
-    offset: ExpressionItem | None = None
-    returning: Sequence[ExpressionItem] | None = None
+    where: Sequence["ExpressionItem"] | None = None
+    group_by: Sequence["ExpressionItem"] | None = Field(default=None, alias="group by")
+    having: Sequence["ExpressionItem"] | None = None
+    order_by: Sequence["ExpressionItem"] | None = Field(default=None, alias="order by")
+    limit: Union["ExpressionItem", None] = None
+    offset: Union["ExpressionItem", None] = None
+    returning: Sequence["ExpressionItem"] | None = None
 
     @model_validator(mode="after")
     def check_values(self) -> "Criteria":
         """
         Validate the model fields.
         """
+
+        if self.delete and self.insert and self.select and self.update:
+            raise ValueError(
+                "Criteria can only have one of DELETE, INSERT, SELECT, or UPDATE"
+            )
 
         for index, combine_item in enumerate(self.combine or []):
             if index < len(self.combine or []) - 1:

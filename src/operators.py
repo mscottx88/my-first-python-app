@@ -22,7 +22,7 @@ def parse_infix_operator(
 
     model = models.InfixOperator(**kwargs)
 
-    expressions = model.expressions or [model.left, model.right]
+    expressions = kwargs.get("expressions") or [kwargs["left"], kwargs["right"]]
     return parsers.parse_expression(
         expressions, statement, values, joiner=model.sql_operator, wrap=model.wrap
     )
@@ -40,7 +40,7 @@ def parse_prefix_operator(
     model = models.PrefixOperator(**kwargs)
 
     statement += model.sql_operator
-    return parsers.parse_expression(model.operand, statement, values)
+    return parsers.parse_expression(kwargs["operand"], statement, values)
 
 
 def parse_mixed_operator(
@@ -53,16 +53,13 @@ def parse_mixed_operator(
     Parse a mixed operator.
     """
 
-    if ("left" in kwargs and "right" in kwargs) or "expressions" in kwargs:
+    model = models.MixedOperator(**kwargs)
+
+    if (model.left and model.right) or model.expressions:
         return parse_infix_operator(statement, values, **kwargs)
 
     operand = kwargs["operand"] if "operand" in kwargs else kwargs["left"]
-    if operand is not None:
-        return parse_prefix_operator(statement, values, **kwargs | {"operand": operand})
-
-    raise ValueError(
-        "Operator requires 'operand', 'left', and 'right' or 'expressions' arguments"
-    )
+    return parse_prefix_operator(statement, values, **kwargs | {"operand": operand})
 
 
 def parse_between_operator(
@@ -74,13 +71,15 @@ def parse_between_operator(
 
     model = models.BetweenOperator(**kwargs)
 
-    statement, values = parsers.parse_expression(model.expression, statement, values)
+    statement, values = parsers.parse_expression(
+        kwargs["expression"], statement, values
+    )
     statement += model.sql_operator
     if model.symmetric:
         statement += sql.SQL("SYMMETRIC ")
-    statement, values = parsers.parse_expression(model.left, statement, values)
+    statement, values = parsers.parse_expression(kwargs["left"], statement, values)
     statement += sql.SQL(" AND ")
-    return parsers.parse_expression(model.right, statement, values)
+    return parsers.parse_expression(kwargs["right"], statement, values)
 
 
 def parse_cast_operator(
@@ -93,7 +92,9 @@ def parse_cast_operator(
     model = models.CastOperator(**kwargs)
 
     statement += sql.SQL("CAST(")
-    statement, values = parsers.parse_expression(model.expression, statement, values)
+    statement, values = parsers.parse_expression(
+        kwargs["expression"], statement, values
+    )
     statement += model.type_name
 
     if model.interval:
@@ -125,11 +126,15 @@ def parse_in_operator(
     Parse an IN operator.
     """
 
-    model = models.InOperator(**kwargs)
+    _ = models.InOperator(**kwargs)
 
-    statement, values = parsers.parse_expression(model.left, statement, values)
+    statement, values = parsers.parse_expression(kwargs["left"], statement, values)
+    args = cast(
+        list[Any],
+        kwargs["right"] if isinstance(kwargs["right"], list) else [kwargs["right"]],
+    )
     return parsers.parse_function(
-        statement, values, function_name="IN", args=model.args, pad=True
+        statement, values, function_name="IN", args=args, pad=True
     )
 
 
