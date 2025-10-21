@@ -9,7 +9,7 @@ to construct the sub-query recursively.
 """
 
 from operator import itemgetter
-from typing import Any, cast, get_args
+from typing import Any, Sequence, cast, get_args
 from psycopg import sql
 from src import models, operators as op
 import src.query_builder as qb
@@ -55,7 +55,7 @@ def parse_expression_list(
 
 
 def parse_column_list(
-    columns: list[str], statement: sql.Composable, values: list[Any]
+    columns: Sequence[str], statement: sql.Composable, values: list[Any]
 ) -> tuple[sql.Composable, list[Any]]:
     """
     Parse a list of column references.

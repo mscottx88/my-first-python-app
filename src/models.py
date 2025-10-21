@@ -2,7 +2,7 @@
 Data models for the application.
 """
 
-from typing import Annotated, Any, Callable, Literal, Union
+from typing import Annotated, Any, Callable, Literal, Sequence, Union
 from psycopg import sql
 from pydantic import (
     BaseModel,
@@ -22,7 +22,7 @@ def get_expression_type(data: Any) -> str:
     """
 
     if isinstance(data, list):
-        return "list[ExpressionItem]"
+        return "Sequence[ExpressionItem]"
     if data is None:
         return "none"
     if isinstance(data, bool):
@@ -200,7 +200,7 @@ class FunctionExpression(BaseExpression, frozen=True):
     A model representing a function expression.
     """
 
-    args: list["ExpressionItem"] | None = []
+    args: Sequence["ExpressionItem"] | None = []
     function_name: FunctionNames = Field(alias="function name")
     pad: bool = False
     schema_name: str | None = None
@@ -221,7 +221,7 @@ class OperatorExpression(BaseExpression, frozen=True):
     """
 
     operator: str
-    expressions: Union["ExpressionItem", list["ExpressionItem"], None] = None
+    expressions: Union["ExpressionItem", Sequence["ExpressionItem"], None] = None
     left: Union["ExpressionItem", None] = None
     right: Union["ExpressionItem", None] = None
     operand: Union["ExpressionItem", None] = None
@@ -275,7 +275,7 @@ class InfixOperator(BaseOperator, frozen=True):
     A model representing an infix operator.
     """
 
-    expressions: Any | list[Any] | None = None
+    expressions: Any | Sequence[Any] | None = None
     operator: InfixOperators
     left: Any | None = None
     right: Any | None = None
@@ -299,7 +299,7 @@ class MixedOperator(BaseOperator, frozen=True):
     A model representing a mixed operator.
     """
 
-    expressions: Any | list[Any] | None = None
+    expressions: Any | Sequence[Any] | None = None
     left: Any | None = None
     operand: Any | None = None
     operator: MixedOperators
@@ -379,11 +379,11 @@ class InOperator(BaseOperator, frozen=True):
 
     left: Any
     operator: Literal["IN"]
-    right: list[Any] | Any
+    right: Sequence[Any] | Any
 
     @computed_field
     @property
-    def args(self) -> list[Any]:
+    def args(self) -> Sequence[Any]:
         """
         Get the function arguments.
         """
@@ -430,7 +430,7 @@ class WithItem(BaseClause):
     A model representing a WITH item.
     """
 
-    columns: list[str] | None = None
+    columns: Sequence[str] | None = None
     name: str
     materialized: bool | None = None
     recursive: bool = False
@@ -443,12 +443,12 @@ class InsertItem(BaseClause):
     """
 
     alias: str | None = None
-    columns: list[str] | None = None
+    columns: Sequence[str] | None = None
     table: str
 
 
 type ExpressionItem = Annotated[
-    Annotated[list["ExpressionItem"], Tag("list[ExpressionItem]")]
+    Annotated[Sequence["ExpressionItem"], Tag("Sequence[ExpressionItem]")]
     | Annotated[None, Tag("none")]
     | Annotated[bool, Tag("bool")]
     | Annotated[int, Tag("int")]
@@ -472,6 +472,55 @@ class SelectItem(BaseClause):
     alias: str | None = None
 
 
+class UpdateItem(BaseClause):
+    """
+    A model representing an UPDATE item.
+    """
+
+    alias: str | None = None
+    set: dict[str, ExpressionItem]
+    table: str
+
+
+class FromItem(BaseClause):
+    """
+    A model representing a FROM item.
+    """
+
+    alias: str | None = None
+    on: Sequence[ExpressionItem] | None = None
+    sub_query: Union["Criteria", None] = Field(default=None, alias="sub query")
+    table: str | None = None
+    type: Literal["INNER", "LEFT", "RIGHT", "FULL", "CROSS"] | None = None
+
+    @field_validator("type", mode="before")
+    @classmethod
+    def normalize_values(cls, value: str | None) -> str | None:
+        """
+        Normalize the value.
+        """
+
+        return value.upper() if value else None
+
+    @computed_field
+    @property
+    def join_type(self) -> sql.Composable | None:
+        """
+        Get the join type.
+        """
+        return sql.SQL(f" {self.type} JOIN ") if self.type else None
+
+    @model_validator(mode="after")
+    def check_values(self) -> "FromItem":
+        """
+        Validate the model fields.
+        """
+
+        if self.sub_query is None and self.table is None:
+            raise ValueError("FROM item must have either 'table' or 'sub query'")
+        return self
+
+
 class Criteria(BaseModel):
     """
     A model representing SQL criteria.
@@ -479,21 +528,21 @@ class Criteria(BaseModel):
 
     model_config = ConfigDict(arbitrary_types_allowed=True, populate_by_name=True)
 
-    combine: list[CombineItem] | None = None
-    with_: list[WithItem] | None = Field(default=None, alias="with")
+    combine: Sequence[CombineItem] | None = None
+    with_: Sequence[WithItem] | None = Field(default=None, alias="with")
     delete: Any | None = None
     insert: InsertItem | None = None
-    select: list[Annotated[ExpressionItem, SelectItem]] | None = None
-    update: Any | None = None
-    values: list[list[ExpressionItem]] | None = None
-    from_: list[Any] | None = Field(default=None, alias="from")
-    where: list[ExpressionItem] | None = None
-    group_by: list[ExpressionItem] | None = Field(default=None, alias="group by")
-    having: list[ExpressionItem] | None = None
-    order_by: list[ExpressionItem] | None = Field(default=None, alias="order by")
+    select: Sequence[Annotated[ExpressionItem, SelectItem]] | None = None
+    update: UpdateItem | None = None
+    values: Sequence[Sequence[ExpressionItem]] | None = None
+    from_: Sequence[FromItem] | None = Field(default=None, alias="from")
+    where: Sequence[ExpressionItem] | None = None
+    group_by: Sequence[ExpressionItem] | None = Field(default=None, alias="group by")
+    having: Sequence[ExpressionItem] | None = None
+    order_by: Sequence[ExpressionItem] | None = Field(default=None, alias="order by")
     limit: ExpressionItem | None = None
     offset: ExpressionItem | None = None
-    returning: list[ExpressionItem] | None = None
+    returning: Sequence[ExpressionItem] | None = None
 
     @model_validator(mode="after")
     def check_values(self) -> "Criteria":
@@ -507,5 +556,18 @@ class Criteria(BaseModel):
                     raise ValueError("Intermediate combine items must have 'type'")
             elif combine_item.type is not None or combine_item.all:
                 raise ValueError("Final combine item cannot have 'type' or 'all'")
+
+        for index, from_item in enumerate(self.from_ or []):
+            model = FromItem(**from_item.model_dump())
+            if index == 0:
+                if model.type is not None or model.on is not None:
+                    raise ValueError("First FROM item cannot have 'type' or 'on'")
+            else:
+                if model.type is None:
+                    raise ValueError("JOIN items must have 'type'")
+                if model.type == "CROSS" and model.on is not None:
+                    raise ValueError("CROSS JOIN cannot have 'on' clause")
+                if model.type != "CROSS" and model.on is None:
+                    raise ValueError("JOIN items must have 'on' clause")
 
         return self

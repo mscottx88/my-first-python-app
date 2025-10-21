@@ -144,16 +144,12 @@ def parse_update(
     Parse an UPDATE statement.
     """
 
-    if "table" not in item:
-        raise ValueError("UPDATE statement must have 'table'")
+    model = models.UpdateItem(**item)
 
-    statement += sql.SQL(" UPDATE ") + sql.Identifier(item["table"])
+    statement += sql.SQL(" UPDATE ") + sql.Identifier(model.table)
 
-    if "alias" in item:
-        statement += sql.SQL(" AS ") + sql.Identifier(item["alias"])
-
-    if "set" not in item or not isinstance(item["set"], dict):
-        raise ValueError("UPDATE statement must have 'set' clause as a dictionary")
+    if model.alias:
+        statement += sql.SQL(" AS ") + sql.Identifier(model.alias)
 
     statement += sql.SQL(" SET ")
     for index, (column, value) in enumerate(item["set"].items()):
@@ -181,40 +177,26 @@ def parse_values(
 
 
 def parse_from_item(
-    item: Any, statement: sql.Composable, values: list[Any], index: int
+    item: Any, statement: sql.Composable, values: list[Any]
 ) -> tuple[sql.Composable, list[Any]]:
     """
     Parse a single FROM item.
     """
 
-    if index == 0:
-        if "type" in item or "on" in item:
-            raise ValueError("First FROM item cannot have 'type' or 'on'")
-    else:
-        if "type" not in item:
-            raise ValueError("JOIN items must have 'type'")
+    model = models.FromItem(**item)
 
-        join_type = item["type"].upper()
-        if join_type not in ("INNER", "LEFT", "RIGHT", "FULL", "CROSS"):
-            raise ValueError(f"Invalid join type: {join_type}")
-        if join_type in ("INNER", "LEFT", "RIGHT", "FULL") and "on" not in item:
-            raise ValueError(f"{join_type} JOIN must have 'on' clause")
-        if join_type == "CROSS" and "on" in item:
-            raise ValueError("CROSS JOIN cannot have 'on' clause")
+    if not model.join_type is None:
+        statement += model.join_type
 
-        statement += sql.SQL(f" {join_type} JOIN ")
-
-    if "sub query" in item:
+    if model.sub_query:
         statement, values = parsers.parse_expression(item, statement, values)
-    elif "table" in item:
-        statement += sql.Identifier(item["table"])
-    else:
-        raise ValueError("Invalid FROM item")
+    elif model.table:
+        statement += sql.Identifier(model.table)
 
-    if "alias" in item:
-        statement += sql.SQL(" AS ") + sql.Identifier(item["alias"])
+    if model.alias:
+        statement += sql.SQL(" AS ") + sql.Identifier(model.alias)
 
-    if "on" in item:
+    if model.on:
         statement, values = parsers.parse_expression(
             item["on"], statement + sql.SQL(" ON "), values, joiner=sql.SQL(" AND ")
         )
@@ -230,9 +212,9 @@ def parse_from(
     """
 
     statement += sql.SQL(" FROM ")
-    for index, item in enumerate(items):
-        statement, values = parse_from_item(item, statement, values, index)
-    return statement, values
+    return parsers.parse_expression(
+        items, statement, values, joiner=sql.SQL(""), parser=parse_from_item
+    )
 
 
 def parse_where(
