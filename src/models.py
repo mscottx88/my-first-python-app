@@ -526,6 +526,24 @@ class FromItem(BaseClause):
         return self
 
 
+class OrderByItem(BaseClause):
+    """
+    A model representing an ORDER BY item.
+    """
+
+    direction: Literal["ASC", "DESC"] = "ASC"
+    nulls: Literal["FIRST", "LAST"] | None = None
+
+    @field_validator("direction", "nulls", mode="before")
+    @classmethod
+    def normalize_values(cls, value: str | None) -> str | None:
+        """
+        Normalize the value.
+        """
+
+        return value.upper() if value else None
+
+
 class Criteria(BaseModel):
     """
     A model representing SQL criteria.
@@ -544,7 +562,9 @@ class Criteria(BaseModel):
     where: Sequence["ExpressionItem"] | None = None
     group_by: Sequence["ExpressionItem"] | None = Field(default=None, alias="group by")
     having: Sequence["ExpressionItem"] | None = None
-    order_by: Sequence["ExpressionItem"] | None = Field(default=None, alias="order by")
+    order_by: Sequence[Annotated["ExpressionItem", OrderByItem]] | None = Field(
+        default=None, alias="order by"
+    )
     limit: Union["ExpressionItem", None] = None
     offset: Union["ExpressionItem", None] = None
     returning: Sequence["ExpressionItem"] | None = None

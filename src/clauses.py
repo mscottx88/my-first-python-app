@@ -257,13 +257,13 @@ def parse_order_by_item(
     Parse a single ORDER BY item.
     """
 
-    direction = "ASC" if "direction" not in item else item["direction"].upper()
-    if direction not in ("ASC", "DESC"):
-        raise ValueError(f"Invalid ORDER BY direction: {direction}")
+    model = models.OrderByItem(**item)
 
-    expression = {key: value for key, value in item.items() if key != "direction"}
-    statement, values = parsers.parse_expression(expression, statement, values)
-    return statement + sql.SQL(f" {direction}"), values
+    statement, values = parsers.parse_expression(item, statement, values)
+    statement += sql.SQL(f" {model.direction}")
+    if model.nulls:
+        statement += sql.SQL(f" NULLS {model.nulls}")
+    return statement, values
 
 
 def parse_order_by(

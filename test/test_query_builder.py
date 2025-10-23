@@ -251,6 +251,7 @@ class TestQueryBuilder(unittest.TestCase):
                                         {
                                             "column": "name",
                                             "direction": "DESC",
+                                            "nulls": "LAST",
                                         },
                                     ],
                                     "limit": {"value": 100},
