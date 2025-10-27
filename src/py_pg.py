@@ -5,16 +5,18 @@ Sample code for postgreSQL database connection and operations.
 import asyncio
 from os import environ
 import sys
-from typing import cast, Any, AsyncGenerator, AsyncContextManager
+from typing import Generator, cast, Any, AsyncGenerator, AsyncContextManager
 import psycopg
 from psycopg.conninfo import make_conninfo
 from psycopg.rows import DictRow, dict_row
 from psycopg import AsyncConnection, sql
-from psycopg_pool import AsyncConnectionPool
+from psycopg_pool import AsyncConnectionPool, ConnectionPool
 import src.query_builder as qb
 
 if sys.platform == "win32":
     asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+
+type Notification = psycopg.Notify
 
 
 class PyPg:
@@ -36,6 +38,28 @@ class PyPg:
                 user=self.db_user,
             ),
         )
+        self.listener_pool = ConnectionPool(
+            open=False,
+            conninfo=make_conninfo(
+                dbname=self.db_name,
+                host=self.db_host,
+                password=self.db_password,
+                user=self.db_user,
+            ),
+        )
+
+    def on_notification(self, channel: str) -> Generator[Notification, None, None]:
+        """
+        Yields notifications from the PostgreSQL database.
+        """
+
+        self.listener_pool.open()
+        with self.listener_pool.connection() as conn:
+            conn.autocommit = True
+            conn.execute(
+                sql.SQL("LISTEN {channel}").format(channel=sql.Identifier(channel))
+            )
+            yield from conn.notifies()
 
     async def connect(self) -> AsyncContextManager[AsyncConnection]:
         """

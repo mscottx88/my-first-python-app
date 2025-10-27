@@ -6,6 +6,7 @@ import sys
 import unittest
 import asyncio
 import asyncstdlib as a
+from psycopg import sql
 from psycopg.rows import dict_row
 from src.py_pg import PyPg
 
@@ -195,6 +196,39 @@ class TestMyPg(unittest.TestCase):
                 self.assertIsNotNone(row)
                 assert row is not None
                 self.assertEqual(row["name"], "UpdatedTest2")
+
+        asyncio.run(test())
+
+    def test_listener(self):
+        """
+        Test listening for notifications
+        """
+
+        def listener():
+            gen = self.pg.on_notification("test_channel")
+            for [index, notification] in enumerate(gen):
+                print(
+                    f"Received notification: {notification.channel} - {notification.payload} - {notification.pid}"
+                )
+                if index == 4:
+                    gen.close()
+                    return
+
+        async def notifier():
+            async with await self.pg.connect() as conn:
+                for index in range(5):
+                    await conn.execute(
+                        sql.SQL("NOTIFY test_channel, {index}").format(
+                            index=sql.Literal(str(index))
+                        )
+                    )
+                    await asyncio.sleep(0.1)
+
+        async def test():
+            listener_task = asyncio.to_thread(listener)
+            notifier_task = asyncio.create_task(notifier())
+            await asyncio.gather(listener_task, notifier_task)
+            self.pg.listener_pool.close()
 
         asyncio.run(test())
 
